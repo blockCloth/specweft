@@ -1,0 +1,23 @@
+{
+  "name": "specweft-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm -r check",
+    "dev": "pnpm --filter specweft dev",
+    "specweft": "node packages/cli/dist/index.js",
+    "start": "pnpm specweft start",
+    "mcp": "pnpm specweft mcp",
+    "web": "pnpm --filter @specweft/web dev"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

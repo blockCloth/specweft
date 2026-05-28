@@ -1,0 +1,22 @@
+{
+  "name": "specweft",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "specweft": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@specweft/core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0"
+  }
+}

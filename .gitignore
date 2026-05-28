@@ -1,0 +1,12 @@
+node_modules/
+dist/
+packages/*/dist/
+*.tsbuildinfo
+.specweft/
+.turbo/
+.vite/
+.cache/
+.env
+.env.*
+.DS_Store
+*.log
