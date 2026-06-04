@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 export function specweftHome(): string {
-  return path.join(os.homedir(), ".specweft");
+  return process.env.SPECWEFT_HOME || path.join(os.homedir(), ".specweft");
 }
 
 export function mcpPoolDir(): string {

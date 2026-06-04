@@ -1,11 +1,61 @@
 {
   "name": "@specweft/core",
   "version": "0.1.0",
+  "description": "Core project profiling, tool assembly, review, and memory logic for SpecWeft.",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blockCloth/specweft.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/blockCloth/specweft#readme",
+  "bugs": {
+    "url": "https://github.com/blockCloth/specweft/issues"
+  },
+  "keywords": [
+    "agent",
+    "mcp",
+    "codex",
+    "claude",
+    "code-review"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/assembly/**/*",
+    "dist/bootstrap/**/*",
+    "dist/diff/**/*",
+    "dist/marketplace/**/*",
+    "dist/memory/**/*",
+    "dist/pool/**/*",
+    "dist/recommendations/**/*",
+    "dist/scanner/**/*",
+    "dist/schemas/**/*",
+    "dist/selection/**/*",
+    "dist/status/**/*",
+    "dist/utils/**/*",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build": "pnpm clean && tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/__tests__/*.test.js"
   }
 }

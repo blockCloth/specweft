@@ -76,6 +76,22 @@ Phase 2 新增了全局 MCP Pool 和 Skill Pool：
    - 注册 tools
    - 通过 stdio transport 启动
 
+13. `packages/core/src/marketplace/skills-marketplace.ts`
+   - 根据项目语言、框架和推荐项生成搜索关键词
+   - 搜索 skillsmp 候选
+   - 过滤 Java 项目里的 JavaScript 噪音
+   - 检测外部规范 Skill 与本地规则文件的冲突
+
+14. `packages/core/src/pool/pool-manager.ts`
+   - `installMarketplaceSkill`
+   - 把市场 Skill 下载到全局 Skill 池
+   - 保证 `pool init` 不会清掉用户安装的市场 Skill
+
+15. `packages/web/src/server.ts` 和 `packages/web/src/ui.ts`
+   - 本地 Web UI
+   - 市场 Skill 搜索、加入并启用
+   - 把 JSON 结果渲染成用户能读的 HTML 卡片
+
 ## 这版涉及的 TypeScript 知识
 
 ### type
@@ -185,6 +201,7 @@ pnpm specweft -- apply mcp filesystem --repo .
 pnpm specweft -- apply skill diff-explainer --repo .
 pnpm specweft -- assembly --repo .
 pnpm specweft -- mcp --repo .
+pnpm specweft start
 ```
 
 ## 下一版建议做什么

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "./args.js";
+import { runHandoff } from "./commands/handoff.js";
 import { runInit } from "./commands/init.js";
 import { runRecall } from "./commands/recall.js";
 import { runRecommend } from "./commands/recommend.js";
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (args.command === "start") {
+  if (args.command === "start" || args.command === "open") {
     await runStart(args.repo, args.port);
     return;
   }
@@ -46,6 +47,11 @@ async function main(): Promise<void> {
 
   if (args.command === "recall") {
     await runRecall(args.repo, args.keyword);
+    return;
+  }
+
+  if (args.command === "handoff") {
+    await runHandoff(args.repo, args.keyword);
     return;
   }
 
@@ -91,28 +97,30 @@ function printHelp(): void {
   printText(`SpecWeft
 
 Usage:
-  specweft init --repo .
+  specweft init
   specweft start
-  specweft recommend --repo .
-  specweft review --repo . --title "Implement MCP tools"
-  specweft recall --repo . --keyword "login"
+  specweft mcp
+  specweft mcp-inspect
+  specweft review --title "Implement MCP tools"
+  specweft recall --keyword "login"
+  specweft handoff --keyword "login"
   specweft pool init
   specweft pool list mcp
   specweft pool list skills
-  specweft apply mcp filesystem --repo .
-  specweft apply skill diff-explainer --repo .
-  specweft selection list --repo .
-  specweft selection disable:mcp filesystem --repo .
-  specweft assembly --repo .
-  specweft mcp-inspect --repo .
-  specweft mcp --repo .
+  specweft apply mcp filesystem
+  specweft apply skill diff-explainer
+  specweft selection list
+  specweft selection disable:mcp filesystem
+  specweft assembly
 
 Commands:
+  init        Initialize project profile, global pool, default tools, and agent instructions.
   start       Start the local SpecWeft Web UI.
-  init        Scan a project and write .specweft/profile.json.
+  open        Alias for start.
   recommend   Recommend MCP servers and skills for the project.
   review      Inspect current git diff and create a review draft.
   recall      Search recent local session memories by keyword.
+  handoff     Create a new-thread memory handoff prompt.
   status      Show project config, memory, MCP, and skill status.
   pool        Manage the global MCP and Skill pools.
   apply       Enable a MCP or Skill for the current project.

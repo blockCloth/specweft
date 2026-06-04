@@ -3,6 +3,7 @@ dist/
 packages/*/dist/
 *.tsbuildinfo
 .specweft/
+.packs/
 .turbo/
 .vite/
 .cache/

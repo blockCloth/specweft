@@ -4,12 +4,18 @@ import { resolveRepoPath } from "@specweft/core";
 import { printJson } from "../output.js";
 
 const MCP_TOOL_NAMES = [
+  "specweft.bootstrap_session",
   "specweft.get_project_profile",
   "specweft.recommend_project_tools",
   "specweft.get_runtime_assembly",
   "specweft.review_current_diff",
   "specweft.save_session_memory",
   "specweft.recall_sessions",
+  "specweft.create_memory_handoff",
+  "specweft.recommend_marketplace_mcps",
+  "specweft.install_marketplace_mcp",
+  "specweft.recommend_marketplace_skills",
+  "specweft.install_marketplace_skill",
   "specweft.apply_project_mcp",
   "specweft.apply_project_skill",
 ];

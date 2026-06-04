@@ -23,6 +23,84 @@ export type ToolRecommendation = {
   status: "recommended" | "enabled" | "disabled" | "ignored";
 };
 
+export type MarketplaceSkill = {
+  id: string;
+  name: string;
+  author: string;
+  authorAvatar?: string;
+  description: string;
+  githubUrl: string;
+  stars: number;
+  forks: number;
+  updatedAt: string;
+  path: string;
+  branch: string;
+};
+
+export type MarketplaceConflictLevel = "none" | "low" | "medium" | "high";
+
+export type MarketplaceSkillCandidate = MarketplaceSkill & {
+  keyword: string;
+  relevance: number;
+  conflictLevel: MarketplaceConflictLevel;
+  conflictReasons: string[];
+};
+
+export type MarketplaceSkillSearchResult = {
+  source: "skillsmp";
+  keywords: string[];
+  candidates: MarketplaceSkillCandidate[];
+  warnings: string[];
+};
+
+export type MarketplaceSkillInstallResult = {
+  item: SkillRegistryItem;
+  skillPath: string;
+  installedAt: string;
+  contentSource: string;
+};
+
+export type MarketplaceMcp = {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl?: string;
+  homepageUrl?: string;
+  stars: number;
+  forks: number;
+  updatedAt: string;
+  packageName?: string;
+  runtime: McpRuntime;
+  url?: string;
+  envVars: string[];
+  permissions: string[];
+  tags: string[];
+};
+
+export type MarketplaceMcpCandidate = MarketplaceMcp & {
+  keyword: string;
+  relevance: number;
+  installable: boolean;
+  risk: PoolRisk;
+  riskReasons: string[];
+  suggestedManifest?: McpManifest;
+};
+
+export type MarketplaceMcpSearchResult = {
+  source: "official-registry+curated+github";
+  keywords: string[];
+  candidates: MarketplaceMcpCandidate[];
+  warnings: string[];
+};
+
+export type MarketplaceMcpInstallResult = {
+  item: McpRegistryItem;
+  manifest: McpManifest;
+  manifestPath: string;
+  installedAt: string;
+};
+
 export type DiffFileChange = {
   path: string;
   additions: number;
@@ -43,10 +121,15 @@ export type DiffSummary = {
 
 export type ReviewDraft = {
   summary: string;
+  intent: string;
   mainChanges: string[];
+  reviewWalkthrough: string[];
+  impactAreas: string[];
+  overEngineeringSignals: string[];
   reviewChecklist: string[];
   risks: string[];
   testSuggestions: string[];
+  nextThreadPrompt: string;
 };
 
 export type ReviewReport = {
@@ -63,9 +146,49 @@ export type SessionMemory = {
   keywords: string[];
   summary: string;
   changedFiles: string[];
+  reviewPath?: string;
+  nextThreadPrompt?: string;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
+};
+
+export type MemoryHandoff = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  sessions: SessionMemory[];
+  keywords: string[];
+  changedFiles: string[];
+  summary: string;
+  prompt: string;
+};
+
+export type BootstrapSession = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  profile: ProjectProfile;
+  recommendations: ToolRecommendation[];
+  assembly: RuntimeAssembly;
+  handoff: MemoryHandoff;
+  workflow: {
+    when: string;
+    actions: string[];
+  }[];
+};
+
+export type SpecWeftInitResult = {
+  repoPath: string;
+  profile: ProjectProfile;
+  pool: PoolInitResult;
+  enabled: {
+    mcps: ProjectSelectionItem[];
+    skills: ProjectSelectionItem[];
+  };
+  instructionPaths: string[];
+  bootstrap: BootstrapSession;
+  nextCommands: string[];
 };
 
 export type ProjectStatus = {
@@ -103,6 +226,8 @@ export type McpManifest = {
     args: string[];
   };
   url?: string;
+  env?: string[];
+  headers?: Record<string, string>;
   permissions: string[];
   risk: PoolRisk;
   tags: string[];
@@ -143,8 +268,12 @@ export type ProjectSelectionFile = {
 
 // 装载mcp 和 skill
 export type AssemblyMcpServer = {
-  command: string;
-  args: string[];
+  transport: McpRuntime;
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
 };
 
 export type AssemblySkill = {

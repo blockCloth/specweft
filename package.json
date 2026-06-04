@@ -6,10 +6,20 @@
   "scripts": {
     "build": "pnpm -r build",
     "check": "pnpm -r check",
+    "test": "pnpm --filter @specweft/core test",
+    "verify": "pnpm build && pnpm check && pnpm test",
+    "pack:all": "pnpm --filter @specweft/core pack --pack-destination .packs && pnpm --filter @specweft/web pack --pack-destination .packs && pnpm --filter specweft pack --pack-destination .packs",
+    "release:smoke": "node scripts/release-smoke.mjs",
+    "publish:dry": "pnpm verify && rm -rf .packs && mkdir -p .packs && pnpm pack:all && pnpm release:smoke",
     "dev": "pnpm --filter specweft dev",
     "specweft": "node packages/cli/dist/index.js",
+    "init": "pnpm specweft init",
     "start": "pnpm specweft start",
     "mcp": "pnpm specweft mcp",
+    "inspect": "pnpm specweft mcp-inspect",
+    "review": "pnpm specweft review",
+    "handoff": "pnpm specweft handoff",
+    "status": "pnpm specweft status",
     "web": "pnpm --filter @specweft/web dev"
   },
   "devDependencies": {

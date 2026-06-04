@@ -23,6 +23,9 @@ importers:
       '@specweft/core':
         specifier: workspace:*
         version: link:../core
+      '@specweft/web':
+        specifier: workspace:*
+        version: link:../web
       zod:
         specifier: ^4.4.3
         version: 4.4.3

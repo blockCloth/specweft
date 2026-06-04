@@ -7,6 +7,8 @@ import { serve } from "@hono/node-server";
 import {
   applyProjectMcp,
   applyProjectSkill,
+  createBootstrapSession,
+  createMemoryHandoff,
   createReviewReport,
   createRuntimeAssembly,
   disableProjectMcp,
@@ -15,8 +17,12 @@ import {
   ignoreProjectSkill,
   initializeGlobalPools,
   initializeProject,
+  installMarketplaceMcp,
+  installMarketplaceSkill,
   recallSessions,
   recommendForProject,
+  recommendMarketplaceMcps,
+  recommendMarketplaceSkills,
   scanProject,
 } from "@specweft/core";
 import { Hono } from "hono";
@@ -38,8 +44,19 @@ type ReviewBody = {
   title?: string;
 };
 
+type MarketplaceSkillBody = {
+  repoPath?: string;
+  skill?: Parameters<typeof installMarketplaceSkill>[0];
+};
+
+type MarketplaceMcpBody = {
+  repoPath?: string;
+  mcp?: Parameters<typeof installMarketplaceMcp>[0];
+};
+
 const app = new Hono();
-const options = parseArgs(process.argv.slice(2));
+const cliOptions = parseArgs(process.argv.slice(2));
+let options = cliOptions;
 const execFileAsync = promisify(execFile);
 
 app.get("/", (context) => {
@@ -56,12 +73,80 @@ app.get("/api/dashboard", async (context) => {
     createMcpInspect(repoPath),
   ]);
   const recommendations = await recommendForProject(profile, repoPath);
+  const marketplaceSkills = await recommendMarketplaceSkills(profile, recommendations);
+  const marketplaceMcps = await recommendMarketplaceMcps(profile, recommendations);
 
   return context.json({
     profile,
     recommendations,
+    marketplaceSkills,
+    marketplaceMcps,
     assembly,
     mcpInspect,
+  });
+});
+
+app.get("/api/bootstrap", async (context) => {
+  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const keyword = context.req.query("keyword")?.trim();
+  return context.json(await createBootstrapSession(repoPath, keyword));
+});
+
+app.get("/api/marketplace/skills", async (context) => {
+  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const keyword = context.req.query("keyword")?.trim();
+  const profile = await scanProject(repoPath);
+  const recommendations = await recommendForProject(profile, repoPath);
+  return context.json(await recommendMarketplaceSkills(profile, recommendations, {
+    keywords: keyword ? [keyword] : undefined,
+  }));
+});
+
+app.post("/api/marketplace/skills/apply", async (context) => {
+  const body = await context.req.json<MarketplaceSkillBody>();
+  const repoPath = resolveRequestRepo(body.repoPath);
+
+  if (!body.skill) {
+    return context.json({ error: "Marketplace Skill is required." }, 400);
+  }
+
+  // 市场 Skill 先进入全局池，再写入项目选择。这样同一个 Skill 可以被多个项目复用。
+  const installed = await installMarketplaceSkill(body.skill);
+  const selection = await applyProjectSkill(repoPath, installed.item.id);
+
+  return context.json({
+    installed,
+    selection,
+  });
+});
+
+app.get("/api/marketplace/mcps", async (context) => {
+  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const keyword = context.req.query("keyword")?.trim();
+  const requirement = context.req.query("requirement")?.trim();
+  const profile = await scanProject(repoPath);
+  const recommendations = await recommendForProject(profile, repoPath);
+  return context.json(await recommendMarketplaceMcps(profile, recommendations, {
+    keywords: keyword ? [keyword] : undefined,
+    requirement,
+  }));
+});
+
+app.post("/api/marketplace/mcps/apply", async (context) => {
+  const body = await context.req.json<MarketplaceMcpBody>();
+  const repoPath = resolveRequestRepo(body.repoPath);
+
+  if (!body.mcp) {
+    return context.json({ error: "Marketplace MCP is required." }, 400);
+  }
+
+  // MCP 候选先写入全局 manifest 池，再启用到项目选择，最后由 runtime assembly 输出给 Codex/Claude。
+  const installed = await installMarketplaceMcp(body.mcp);
+  const selection = await applyProjectMcp(repoPath, installed.item.id);
+
+  return context.json({
+    installed,
+    selection,
   });
 });
 
@@ -135,12 +220,32 @@ app.get("/api/recall", async (context) => {
   });
 });
 
+app.get("/api/handoff", async (context) => {
+  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const keyword = context.req.query("keyword")?.trim();
+  const profile = await scanProject(repoPath);
+
+  return context.json({
+    handoff: await createMemoryHandoff(repoPath, profile, keyword),
+  });
+});
+
 app.onError((error, context) => {
   const message = error instanceof Error ? error.message : String(error);
   return context.json({ error: message }, 500);
 });
 
-await startServer(options.port);
+export async function startWebServer(webOptions: WebOptions): Promise<void> {
+  options = {
+    repoPath: resolveWebRepoPath(webOptions.repoPath),
+    port: webOptions.port,
+  };
+  await startServer(options.port);
+}
+
+if (isMainModule()) {
+  await startWebServer(cliOptions);
+}
 
 function parseArgs(argv: string[]): WebOptions {
   let repoPath = ".";
@@ -207,12 +312,18 @@ function createMcpInspect(repoPath: string) {
     server: "specweft",
     transport: "stdio",
     tools: [
+      "specweft.bootstrap_session",
       "specweft.get_project_profile",
       "specweft.recommend_project_tools",
       "specweft.get_runtime_assembly",
       "specweft.review_current_diff",
       "specweft.save_session_memory",
       "specweft.recall_sessions",
+      "specweft.create_memory_handoff",
+      "specweft.recommend_marketplace_mcps",
+      "specweft.install_marketplace_mcp",
+      "specweft.recommend_marketplace_skills",
+      "specweft.install_marketplace_skill",
       "specweft.apply_project_mcp",
       "specweft.apply_project_skill",
     ],
@@ -230,6 +341,10 @@ function createMcpInspect(repoPath: string) {
 function resolveCliEntryPath(): string {
   const currentFile = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(currentFile), "..", "..", "cli", "dist", "index.js");
+}
+
+function isMainModule(): boolean {
+  return fileURLToPath(import.meta.url) === process.argv[1];
 }
 
 async function startServer(port: number, attempt = 0): Promise<void> {

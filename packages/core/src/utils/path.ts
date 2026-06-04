@@ -1,8 +1,12 @@
 import path from "node:path";
 
 export function resolveRepoPath(repoPath: string): string {
+  if (path.isAbsolute(repoPath)) {
+    return repoPath;
+  }
+
   // 所有命令都先把用户输入的相对路径转成绝对路径，避免后续 cwd 混乱。
-  return path.resolve(process.cwd(), repoPath);
+  return path.resolve(process.env.SPECWEFT_REPO ?? process.env.INIT_CWD ?? process.cwd(), repoPath);
 }
 
 export function toPosixPath(filePath: string): string {

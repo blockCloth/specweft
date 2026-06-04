@@ -1,9 +1,48 @@
 {
   "name": "@specweft/web",
   "version": "0.1.0",
+  "description": "Local Web UI for managing SpecWeft project context, MCPs, Skills, review, and memory.",
+  "license": "MIT",
   "type": "module",
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blockCloth/specweft.git",
+    "directory": "packages/web"
+  },
+  "homepage": "https://github.com/blockCloth/specweft#readme",
+  "bugs": {
+    "url": "https://github.com/blockCloth/specweft/issues"
+  },
+  "keywords": [
+    "agent",
+    "mcp",
+    "codex",
+    "claude",
+    "web-ui"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build": "pnpm clean && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/server.ts"
   },

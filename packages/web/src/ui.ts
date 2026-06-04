@@ -236,6 +236,11 @@ export function renderApp(repoPath: string): string {
         line-height: 1.2;
       }
 
+      h2 {
+        margin: 0;
+        font-size: 17px;
+      }
+
       .grid {
         display: grid;
         gap: 14px;
@@ -372,6 +377,20 @@ export function renderApp(repoPath: string): string {
         white-space: pre-wrap;
       }
 
+      .prompt-box {
+        width: 100%;
+        min-height: 96px;
+        padding: 13px;
+        border: 1px solid rgba(121, 169, 237, 0.18);
+        border-radius: 12px;
+        background: rgba(246, 251, 255, 0.72);
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
       .result-view {
         display: grid;
         gap: 12px;
@@ -384,6 +403,88 @@ export function renderApp(repoPath: string): string {
         padding: 14px;
         box-shadow: var(--shadow-soft);
         backdrop-filter: blur(18px) saturate(140%);
+      }
+
+      .marketplace-header {
+        display: grid;
+        gap: 5px;
+        margin: 18px 0 12px;
+      }
+
+      .marketplace-header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .marketplace-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .marketplace-card {
+        display: grid;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.58);
+        padding: 14px;
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(18px) saturate(140%);
+      }
+
+      .marketplace-card h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .marketplace-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .marketplace-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .memory-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .memory-item {
+        display: grid;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid rgba(121, 169, 237, 0.16);
+        border-radius: 12px;
+        background: rgba(246, 251, 255, 0.66);
+      }
+
+      .memory-item h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .conflict-none {
+        color: var(--green);
+      }
+
+      .conflict-medium,
+      .conflict-high {
+        color: var(--amber);
+      }
+
+      .warning-list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--amber);
+        line-height: 1.6;
       }
 
       .result-card h2,
@@ -524,6 +625,7 @@ export function renderApp(repoPath: string): string {
         .topbar,
         .repo-row,
         .grid.three,
+        .marketplace-grid,
         .detail-grid,
         .form-row {
           grid-template-columns: 1fr;
@@ -623,6 +725,29 @@ export function renderApp(repoPath: string): string {
               <tbody id="recommendationRows"></tbody>
             </table>
           </div>
+          <div class="marketplace-header">
+            <h2 data-i18n="marketplaceMcps">市场 MCP 候选</h2>
+            <p data-i18n="marketplaceMcpNotice">根据项目画像和需求关键词搜索 MCP 候选，只写入 SpecWeft 工具池，不会直接修改 Codex 或 Claude 全局配置。</p>
+          </div>
+          <div class="panel grid marketplace-search">
+            <div class="form-row">
+              <input id="marketplaceMcpKeywordInput" class="input" data-i18n-placeholder="marketplaceMcpKeywordPlaceholder" placeholder="搜索 MCP 关键词，例如 github、playwright、postgres" />
+              <button id="marketplaceMcpSearchButton" class="btn primary" data-i18n="searchMarketplaceMcp">搜索市场 MCP</button>
+            </div>
+          </div>
+          <div id="marketplaceMcps" class="marketplace-grid"></div>
+
+          <div class="marketplace-header">
+            <h2 data-i18n="marketplaceSkills">市场 Skill 候选</h2>
+            <p data-i18n="marketplaceNotice">根据当前项目关键词搜索外部 Skill，只做候选展示，不会自动应用或覆盖本地规范。</p>
+          </div>
+          <div class="panel grid marketplace-search">
+            <div class="form-row">
+              <input id="marketplaceKeywordInput" class="input" data-i18n-placeholder="marketplaceKeywordPlaceholder" placeholder="搜索 Skill 关键词，例如 java" />
+              <button id="marketplaceSearchButton" class="btn primary" data-i18n="searchMarketplace">搜索市场 Skill</button>
+            </div>
+          </div>
+          <div id="marketplaceSkills" class="marketplace-grid"></div>
         </section>
 
         <section id="runtime" class="view">
@@ -653,9 +778,13 @@ export function renderApp(repoPath: string): string {
           <div class="panel grid">
             <div class="form-row">
               <input id="keywordInput" class="input" data-i18n-placeholder="keywordPlaceholder" placeholder="关键词" />
-              <button id="recallButton" class="btn primary" data-i18n="recall">召回</button>
+              <div class="actions">
+                <button id="recallButton" class="btn" data-i18n="recall">召回</button>
+                <button id="handoffButton" class="btn primary" data-i18n="createHandoff">生成交接上下文</button>
+              </div>
             </div>
             <div id="recallOutput" class="result-view"></div>
+            <div id="handoffOutput" class="result-view"></div>
           </div>
         </section>
 
@@ -691,6 +820,42 @@ export function renderApp(repoPath: string): string {
           filterMcp: "MCP",
           filterSkill: "Skill",
           noToolsForFilter: "当前筛选下没有工具。",
+          marketplaceMcps: "市场 MCP 候选",
+          marketplaceMcpNotice: "根据项目画像和需求关键词搜索 MCP 候选，只写入 SpecWeft 工具池，不会直接修改 Codex 或 Claude 全局配置。",
+          marketplaceMcpKeywordPlaceholder: "搜索 MCP 关键词，例如 github、playwright、postgres",
+          searchMarketplaceMcp: "搜索市场 MCP",
+          searchingMarketplaceMcp: "正在搜索市场 MCP",
+          marketplaceMcpHiddenByFilter: "当前只筛选 Skill，市场 MCP 候选已隐藏。",
+          noMarketplaceMcps: "暂时没有找到合适的市场 MCP。",
+          applyMarketplaceMcp: "加入并启用",
+          applyingMarketplaceMcp: "正在加入 MCP",
+          marketplaceMcpApplied: "市场 MCP 已加入并启用",
+          envVars: "环境变量",
+          permissions: "权限",
+          installable: "可安装",
+          installable_yes: "是",
+          installable_no: "需手动配置",
+          marketplaceSkills: "市场 Skill 候选",
+          marketplaceNotice: "根据当前项目关键词搜索外部 Skill，只做候选展示，不会自动应用或覆盖本地规范。",
+          marketplaceKeywordPlaceholder: "搜索 Skill 关键词，例如 java",
+          searchMarketplace: "搜索市场 Skill",
+          searchingMarketplace: "正在搜索市场 Skill",
+          marketplaceHiddenByFilter: "当前只筛选 MCP，市场 Skill 候选已隐藏。",
+          noMarketplaceSkills: "暂时没有找到合适的市场 Skill。",
+          searchedKeywords: "搜索关键词",
+          matchedKeyword: "匹配关键词",
+          conflictLevel: "冲突风险",
+          conflict_none: "无明显冲突",
+          conflict_low: "低",
+          conflict_medium: "中",
+          conflict_high: "高",
+          marketplaceWarnings: "搜索提示",
+          openGithub: "查看 GitHub",
+          applyMarketplaceSkill: "加入并启用",
+          applyingMarketplaceSkill: "正在加入 Skill",
+          marketplaceSkillApplied: "市场 Skill 已加入并启用",
+          stars: "Stars",
+          forks: "Forks",
           refreshRecommendations: "刷新推荐",
           name: "名称",
           type: "类型",
@@ -706,6 +871,12 @@ export function renderApp(repoPath: string): string {
           memory: "记忆",
           keywordPlaceholder: "关键词",
           recall: "召回",
+          createHandoff: "生成交接上下文",
+          handoff: "线程交接",
+          handoffPrompt: "新线程提示词",
+          recoveredSessions: "恢复到的记忆",
+          generatedAt: "生成时间",
+          handoffReady: "交接上下文已生成",
           connect: "接入配置",
           generateConfig: "生成配置",
           idle: "空闲",
@@ -751,6 +922,7 @@ export function renderApp(repoPath: string): string {
           noChangedFiles: "没有记录修改文件",
           noKeywords: "没有关键词",
           noSessions: "没有找到相关记忆。",
+          noHandoffYet: "还没有生成线程交接上下文。",
           noReviewYet: "还没有生成代码讲解。",
           noRuntimeYet: "暂无运行配置。",
           noConnectYet: "暂无接入配置。"
@@ -775,6 +947,42 @@ export function renderApp(repoPath: string): string {
           filterMcp: "MCP",
           filterSkill: "Skill",
           noToolsForFilter: "No tools match this filter.",
+          marketplaceMcps: "Marketplace MCP Candidates",
+          marketplaceMcpNotice: "Search MCP candidates from the project profile and requirement keywords. SpecWeft writes them to its tool pool and does not modify global Codex or Claude config directly.",
+          marketplaceMcpKeywordPlaceholder: "Search MCP keyword, e.g. github, playwright, postgres",
+          searchMarketplaceMcp: "Search Marketplace MCPs",
+          searchingMarketplaceMcp: "Searching marketplace MCPs",
+          marketplaceMcpHiddenByFilter: "Marketplace MCP candidates are hidden while Skill is selected.",
+          noMarketplaceMcps: "No matching marketplace MCPs were found.",
+          applyMarketplaceMcp: "Add and Enable",
+          applyingMarketplaceMcp: "Adding MCP",
+          marketplaceMcpApplied: "Marketplace MCP added and enabled",
+          envVars: "Env vars",
+          permissions: "Permissions",
+          installable: "Installable",
+          installable_yes: "Yes",
+          installable_no: "Manual config",
+          marketplaceSkills: "Marketplace Skill Candidates",
+          marketplaceNotice: "External Skills are shown as candidates only. SpecWeft will not apply them automatically or override local rules.",
+          marketplaceKeywordPlaceholder: "Search Skill keyword, e.g. java",
+          searchMarketplace: "Search Marketplace Skills",
+          searchingMarketplace: "Searching marketplace Skills",
+          marketplaceHiddenByFilter: "Marketplace Skill candidates are hidden while MCP is selected.",
+          noMarketplaceSkills: "No matching marketplace Skills were found.",
+          searchedKeywords: "Search keywords",
+          matchedKeyword: "Matched keyword",
+          conflictLevel: "Conflict risk",
+          conflict_none: "No obvious conflict",
+          conflict_low: "Low",
+          conflict_medium: "Medium",
+          conflict_high: "High",
+          marketplaceWarnings: "Search notes",
+          openGithub: "Open GitHub",
+          applyMarketplaceSkill: "Add and Enable",
+          applyingMarketplaceSkill: "Adding Skill",
+          marketplaceSkillApplied: "Marketplace Skill added and enabled",
+          stars: "Stars",
+          forks: "Forks",
           refreshRecommendations: "Refresh Recommendations",
           name: "Name",
           type: "Type",
@@ -790,6 +998,12 @@ export function renderApp(repoPath: string): string {
           memory: "Memory",
           keywordPlaceholder: "Keyword",
           recall: "Recall",
+          createHandoff: "Create Handoff",
+          handoff: "Thread Handoff",
+          handoffPrompt: "New Thread Prompt",
+          recoveredSessions: "Recovered Memories",
+          generatedAt: "Generated at",
+          handoffReady: "Handoff created",
           connect: "Connect",
           generateConfig: "Generate Config",
           idle: "Idle",
@@ -835,6 +1049,7 @@ export function renderApp(repoPath: string): string {
           noChangedFiles: "No changed files were recorded.",
           noKeywords: "No keywords.",
           noSessions: "No matching memories found.",
+          noHandoffYet: "No thread handoff has been created yet.",
           noReviewYet: "No review has been created yet.",
           noRuntimeYet: "No runtime assembly yet.",
           noConnectYet: "No connection config yet."
@@ -916,6 +1131,8 @@ export function renderApp(repoPath: string): string {
         const enabled = data.recommendations.filter((item) => item.status === "enabled").length;
         document.getElementById("enabledCount").textContent = String(enabled);
         renderRecommendations(data.recommendations);
+        renderMarketplaceMcps(data.marketplaceMcps);
+        renderMarketplaceSkills(data.marketplaceSkills);
         renderAssembly(data.assembly);
         renderConnect(data.mcpInspect);
       }
@@ -925,6 +1142,9 @@ export function renderApp(repoPath: string): string {
         document.getElementById("connectOutput").innerHTML = emptyState(t("noConnectYet"));
         document.getElementById("reviewOutput").innerHTML = emptyState(t("noReviewYet"));
         document.getElementById("recallOutput").innerHTML = emptyState(t("noSessions"));
+        document.getElementById("handoffOutput").innerHTML = emptyState(t("noHandoffYet"));
+        document.getElementById("marketplaceMcps").innerHTML = emptyState(t("noMarketplaceMcps"));
+        document.getElementById("marketplaceSkills").innerHTML = emptyState(t("noMarketplaceSkills"));
       }
 
       function renderAssembly(assembly) {
@@ -987,6 +1207,35 @@ export function renderApp(repoPath: string): string {
           : emptyState(t("noSessions"));
       }
 
+      function renderHandoff(data) {
+        const handoff = data.handoff || data;
+        const sessions = handoff.sessions || [];
+        document.getElementById("handoffOutput").innerHTML = [
+          sectionCard(t("handoff"), [
+            detailGrid([
+              [t("project"), handoff.projectName || "-"],
+              [t("generatedAt"), handoff.generatedAt || "-"]
+            ]),
+            "<p>" + escapeHtml(handoff.summary || "-") + "</p>"
+          ].join("")),
+          sectionCard(t("handoffPrompt"), "<div class='prompt-box'>" + escapeHtml(handoff.prompt || "-") + "</div>"),
+          sectionCard(t("keywords"), listHtml(handoff.keywords?.length ? handoff.keywords : [t("noKeywords")])),
+          sectionCard(t("changedFiles"), listHtml(handoff.changedFiles?.length ? handoff.changedFiles : [t("noChangedFiles")])),
+          sectionCard(t("recoveredSessions"), sessions.length
+            ? "<div class='memory-stack'>" + sessions.map((session) => [
+                "<div class='memory-item'>",
+                "<h3>" + escapeHtml(session.title) + "</h3>",
+                "<p>" + escapeHtml(session.summary || "-") + "</p>",
+                detailGrid([
+                  [t("memoryId"), session.id],
+                  [t("expiresAt"), session.expiresAt]
+                ]),
+                "</div>"
+              ].join("")).join("") + "</div>"
+            : emptyState(t("noSessions")))
+        ].join("");
+      }
+
       function renderRecommendations(items) {
         const rows = document.getElementById("recommendationRows");
         rows.innerHTML = "";
@@ -1013,6 +1262,114 @@ export function renderApp(repoPath: string): string {
           ].join("");
           rows.appendChild(tr);
         }
+      }
+
+      function renderMarketplaceSkills(result) {
+        const container = document.getElementById("marketplaceSkills");
+
+        if (state.toolFilter === "mcp") {
+          container.innerHTML = emptyState(t("marketplaceHiddenByFilter"));
+          return;
+        }
+
+        if (!result) {
+          container.innerHTML = emptyState(t("noMarketplaceSkills"));
+          return;
+        }
+
+        const candidates = result.candidates || [];
+        const keywordCard = sectionCard(
+          t("searchedKeywords"),
+          listHtml(result.keywords?.length ? result.keywords : ["-"]),
+        );
+        const warningCard = result.warnings?.length
+          ? sectionCard(t("marketplaceWarnings"), "<ul class='warning-list'>" + result.warnings.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>")
+          : "";
+
+        if (candidates.length === 0) {
+          container.innerHTML = keywordCard + warningCard + emptyState(t("noMarketplaceSkills"));
+          return;
+        }
+
+        container.innerHTML = keywordCard
+          + warningCard
+          + candidates.map((skill) => [
+            "<article class='marketplace-card'>",
+            "<div>",
+            "<h3>" + escapeHtml(skill.name) + "</h3>",
+            "<p>" + escapeHtml(skill.description) + "</p>",
+            "</div>",
+            "<div class='marketplace-meta'>",
+            "<span class='tag'>" + escapeHtml(skill.author) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("matchedKeyword")) + ": " + escapeHtml(skill.keyword) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("stars")) + ": " + escapeHtml(skill.stars) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("forks")) + ": " + escapeHtml(skill.forks) + "</span>",
+            "<span class='tag conflict-" + escapeHtml(skill.conflictLevel) + "'>" + escapeHtml(t("conflictLevel")) + ": " + escapeHtml(t("conflict_" + skill.conflictLevel)) + "</span>",
+            "</div>",
+            skill.conflictReasons?.length ? listHtml(skill.conflictReasons) : "",
+            "<div class='actions'>",
+            "<button class='btn primary' data-marketplace-apply='" + escapeHtml(skill.id) + "'>" + escapeHtml(t("applyMarketplaceSkill")) + "</button>",
+            "<a class='btn' href='" + escapeHtml(skill.githubUrl) + "' target='_blank' rel='noreferrer'>" + escapeHtml(t("openGithub")) + "</a>",
+            "</div>",
+            "</article>"
+          ].join("")).join("");
+      }
+
+      function renderMarketplaceMcps(result) {
+        const container = document.getElementById("marketplaceMcps");
+
+        if (state.toolFilter === "skill") {
+          container.innerHTML = emptyState(t("marketplaceMcpHiddenByFilter"));
+          return;
+        }
+
+        if (!result) {
+          container.innerHTML = emptyState(t("noMarketplaceMcps"));
+          return;
+        }
+
+        const candidates = result.candidates || [];
+        const keywordCard = sectionCard(
+          t("searchedKeywords"),
+          listHtml(result.keywords?.length ? result.keywords : ["-"]),
+        );
+        const warningCard = result.warnings?.length
+          ? sectionCard(t("marketplaceWarnings"), "<ul class='warning-list'>" + result.warnings.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>")
+          : "";
+
+        if (candidates.length === 0) {
+          container.innerHTML = keywordCard + warningCard + emptyState(t("noMarketplaceMcps"));
+          return;
+        }
+
+        container.innerHTML = keywordCard
+          + warningCard
+          + candidates.map((mcp) => [
+            "<article class='marketplace-card'>",
+            "<div>",
+            "<h3>" + escapeHtml(mcp.name) + "</h3>",
+            "<p>" + escapeHtml(mcp.description) + "</p>",
+            "</div>",
+            "<div class='marketplace-meta'>",
+            "<span class='tag'>" + escapeHtml(mcp.author) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("matchedKeyword")) + ": " + escapeHtml(mcp.keyword) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("transport")) + ": " + escapeHtml(mcp.runtime) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("stars")) + ": " + escapeHtml(mcp.stars) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("risk")) + ": " + escapeHtml(t("risk_" + mcp.risk)) + "</span>",
+            "<span class='tag'>" + escapeHtml(t("installable")) + ": " + escapeHtml(t(mcp.installable ? "installable_yes" : "installable_no")) + "</span>",
+            "</div>",
+            detailGrid([
+              [t("command"), mcp.packageName || mcp.url || "-"],
+              [t("envVars"), mcp.envVars?.length ? mcp.envVars.join(", ") : "-"],
+              [t("permissions"), mcp.permissions?.length ? mcp.permissions.join(", ") : "-"]
+            ]),
+            mcp.riskReasons?.length ? listHtml(mcp.riskReasons) : "",
+            "<div class='actions'>",
+            "<button class='btn primary' data-marketplace-mcp-apply='" + escapeHtml(mcp.id) + "'>" + escapeHtml(t("applyMarketplaceMcp")) + "</button>",
+            mcp.githubUrl ? "<a class='btn' href='" + escapeHtml(mcp.githubUrl) + "' target='_blank' rel='noreferrer'>" + escapeHtml(t("openGithub")) + "</a>" : "",
+            "</div>",
+            "</article>"
+          ].join("")).join("");
       }
 
       function actionButtons(item) {
@@ -1145,6 +1502,48 @@ export function renderApp(repoPath: string): string {
             setStatus("error");
           }
         }
+
+        const marketplaceSkillId = button.dataset.marketplaceApply;
+        if (marketplaceSkillId && state.dashboard?.marketplaceSkills?.candidates) {
+          const skill = state.dashboard.marketplaceSkills.candidates.find((item) => item.id === marketplaceSkillId);
+          if (!skill) {
+            return;
+          }
+
+          try {
+            setStatus("applyingMarketplaceSkill");
+            await api("/api/marketplace/skills/apply", {
+              method: "POST",
+              body: JSON.stringify({ repoPath: repoInput.value, skill })
+            });
+            await loadDashboard();
+            showToast(t("marketplaceSkillApplied"));
+          } catch (error) {
+            showToast(error.message);
+            setStatus("error");
+          }
+        }
+
+        const marketplaceMcpId = button.dataset.marketplaceMcpApply;
+        if (marketplaceMcpId && state.dashboard?.marketplaceMcps?.candidates) {
+          const mcp = state.dashboard.marketplaceMcps.candidates.find((item) => item.id === marketplaceMcpId);
+          if (!mcp) {
+            return;
+          }
+
+          try {
+            setStatus("applyingMarketplaceMcp");
+            await api("/api/marketplace/mcps/apply", {
+              method: "POST",
+              body: JSON.stringify({ repoPath: repoInput.value, mcp })
+            });
+            await loadDashboard();
+            showToast(t("marketplaceMcpApplied"));
+          } catch (error) {
+            showToast(error.message);
+            setStatus("error");
+          }
+        }
       });
 
       document.getElementById("refreshButton").addEventListener("click", () => loadDashboard().catch((error) => showToast(error.message)));
@@ -1177,6 +1576,26 @@ export function renderApp(repoPath: string): string {
         const data = await api("/api/mcp-inspect?repo=" + encodeURIComponent(repoInput.value));
         renderConnect(data);
       });
+      document.getElementById("marketplaceSearchButton").addEventListener("click", async () => {
+        const keyword = document.getElementById("marketplaceKeywordInput").value.trim();
+        setStatus("searchingMarketplace");
+        const data = await api("/api/marketplace/skills?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
+        if (state.dashboard) {
+          state.dashboard.marketplaceSkills = data;
+        }
+        renderMarketplaceSkills(data);
+        setStatus("ready");
+      });
+      document.getElementById("marketplaceMcpSearchButton").addEventListener("click", async () => {
+        const keyword = document.getElementById("marketplaceMcpKeywordInput").value.trim();
+        setStatus("searchingMarketplaceMcp");
+        const data = await api("/api/marketplace/mcps?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
+        if (state.dashboard) {
+          state.dashboard.marketplaceMcps = data;
+        }
+        renderMarketplaceMcps(data);
+        setStatus("ready");
+      });
       document.getElementById("reviewButton").addEventListener("click", async () => {
         const title = document.getElementById("reviewTitle").value.trim() || t("defaultReviewTitle");
         const data = await api("/api/review", {
@@ -1190,6 +1609,12 @@ export function renderApp(repoPath: string): string {
         const keyword = document.getElementById("keywordInput").value.trim();
         const data = await api("/api/recall?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
         renderRecall(data);
+      });
+      document.getElementById("handoffButton").addEventListener("click", async () => {
+        const keyword = document.getElementById("keywordInput").value.trim();
+        const data = await api("/api/handoff?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
+        renderHandoff(data);
+        showToast(t("handoffReady"));
       });
 
       repoInput.value = ${JSON.stringify(repoPath)};

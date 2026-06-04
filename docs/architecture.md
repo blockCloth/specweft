@@ -38,6 +38,10 @@ specweft.get_runtime_assembly
 specweft.review_current_diff
 specweft.save_session_memory
 specweft.recall_sessions
+specweft.recommend_marketplace_mcps
+specweft.install_marketplace_mcp
+specweft.recommend_marketplace_skills
+specweft.install_marketplace_skill
 specweft.apply_project_mcp
 specweft.apply_project_skill
 ```
@@ -72,6 +76,25 @@ Project storage:
 ```
 
 The global pools answer “what is available”. Project storage answers “what this project selected”.
+
+Marketplace Skills follow the same split:
+
+```text
+skillsmp candidate -> ~/.specweft/skills/<skill-id>/SKILL.md
+                  -> .specweft/skills.json
+```
+
+The Skill body is installed once into the global pool. Each project only stores an enabled/disabled/ignored selection. `pool init` updates built-in entries but keeps marketplace and manual entries.
+
+Marketplace MCPs follow the same shape:
+
+```text
+curated/GitHub candidate -> ~/.specweft/mcp/manifests/<mcp-id>.json
+                        -> .specweft/mcp.json
+                        -> runtime assembly
+```
+
+The MCP manifest stores runtime details, permissions, env var names, and risk level. SpecWeft can assemble both stdio and remote MCP configs, but it does not write global Codex or Claude settings directly.
 
 ## Review And Memory Flow
 

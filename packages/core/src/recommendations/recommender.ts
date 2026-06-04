@@ -21,7 +21,7 @@ export async function recommendForProject(
   const recommendations: ToolRecommendation[] = [];
 
   for (const skill of skillPool.items) {
-    const reason = createSkillReason(skill.id);
+    const reason = createSkillReason(skill.id, profile);
     if (!reason) {
       continue;
     }
@@ -42,7 +42,7 @@ export async function recommendForProject(
       continue;
     }
 
-    const reason = createMcpReason(manifest.id, profile);
+    const reason = createMcpReason(manifest, profile);
     if (!reason) {
       continue;
     }
@@ -60,22 +60,67 @@ export async function recommendForProject(
   return recommendations;
 }
 
-function createSkillReason(id: string): string | undefined {
+function createSkillReason(id: string, profile: ProjectProfile): string | undefined {
+  const projectText = createProjectText(profile);
+  const hasTests = profile.testCommands.length > 0;
+  const hasRules = profile.ruleFiles.length > 0;
+
   if (id === "diff-explainer") {
-    return "Explain AI-generated code changes after each coding session.";
+    return [
+      `Fits ${projectText} because SpecWeft's main workflow is explaining AI-generated diffs after each coding session.`,
+      hasRules
+        ? `It should reference local rule file(s) first: ${profile.ruleFiles.join(", ")}.`
+        : "No local rule file was detected, so the explanation should stay descriptive instead of inventing project conventions.",
+    ].join(" ");
   }
   if (id === "test-planner") {
-    return "Suggest targeted tests from changed files and project commands.";
+    return [
+      hasTests
+        ? `Use existing test command(s) as the verification base: ${profile.testCommands.join("; ")}.`
+        : "No test command was detected yet, so it should suggest the smallest practical verification path from changed files.",
+      `This helps review AI changes in ${projectText} without running unrelated broad checks first.`,
+    ].join(" ");
   }
   return undefined;
 }
 
-function createMcpReason(id: string, profile: ProjectProfile): string | undefined {
-  if (id === "filesystem" && profile.languages.length > 0) {
-    return "Read project files and support context recall within the current repository.";
+function createMcpReason(
+  manifest: NonNullable<Awaited<ReturnType<typeof readMcpManifest>>>,
+  profile: ProjectProfile,
+): string | undefined {
+  const id = manifest.id;
+  const projectText = createProjectText(profile);
+
+  if (id === "filesystem") {
+    return [
+      `Useful for ${projectText}: lets the agent read project files that explain local structure before recommending Skills or writing review notes.`,
+      "Keep it scoped to the current repository path when assembling runtime config.",
+    ].join(" ");
   }
   if (id === "git") {
-    return "Inspect diffs, changed files, branches, and recent development history.";
+    return [
+      "Core to SpecWeft's review loop: it can inspect diffs, changed files, branches, and recent history before producing the code-change explanation.",
+      profile.buildCommands.length
+        ? `Pair it with build command awareness: ${profile.buildCommands.join("; ")}.`
+        : "No build command was detected, so diff review becomes the first lightweight safety signal.",
+    ].join(" ");
+  }
+  if (id.startsWith("marketplace-")) {
+    const riskText = [
+      manifest.permissions.length ? `permissions: ${manifest.permissions.join(", ")}` : "no explicit permissions",
+      manifest.env?.length ? `env: ${manifest.env.join(", ")}` : "no required env vars",
+    ].join("; ");
+
+    return [
+      `Marketplace MCP already exists in the SpecWeft pool and may support ${projectText}.`,
+      `Review before enabling because it declares ${riskText}.`,
+    ].join(" ");
   }
   return undefined;
+}
+
+function createProjectText(profile: ProjectProfile): string {
+  const languages = profile.languages.length ? profile.languages.join("/") : "unknown-language";
+  const frameworks = profile.frameworks.length ? ` with ${profile.frameworks.join("/")}` : "";
+  return `${profile.name} (${languages}${frameworks})`;
 }

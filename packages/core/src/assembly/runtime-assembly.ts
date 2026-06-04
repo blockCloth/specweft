@@ -45,14 +45,28 @@ export async function createRuntimeAssembly(repoPath: string): Promise<RuntimeAs
         }
 
         const manifest = await readMcpManifest(item);
-        if (!manifest || manifest.runtime !== "stdio" || !manifest.launch) {
+        if (!manifest) {
             continue;
         }
 
-        mcpServers[item.id] = {
-            command: replaceProjectRoot(manifest.launch.command, repoPath),
-            args: manifest.launch.args.map((arg) => replaceProjectRoot(arg, repoPath)),
-        };
+        if (manifest.runtime === "stdio" && manifest.launch) {
+            mcpServers[item.id] = {
+                transport: "stdio",
+                command: replaceProjectRoot(manifest.launch.command, repoPath),
+                args: manifest.launch.args.map((arg) => replaceProjectRoot(arg, repoPath)),
+                env: createEnvMap(manifest.env),
+            };
+            continue;
+        }
+
+        if (manifest.runtime === "remote" && manifest.url) {
+            mcpServers[item.id] = {
+                transport: "remote",
+                url: replaceProjectRoot(manifest.url, repoPath),
+                env: createEnvMap(manifest.env),
+                headers: manifest.headers,
+            };
+        }
     }
 
     const skills = allSkills.items
@@ -79,4 +93,12 @@ async function readProjectSelectionFile(filePath: string): Promise<ProjectSelect
 
 function replaceProjectRoot(value: string, repoPath: string): string {
     return value.replaceAll("{{projectRoot}}", repoPath);
+}
+
+function createEnvMap(envVars: string[] | undefined): Record<string, string> | undefined {
+    if (!envVars?.length) {
+        return undefined;
+    }
+
+    return Object.fromEntries(envVars.map((envVar) => [envVar, process.env[envVar] ?? ""]));
 }

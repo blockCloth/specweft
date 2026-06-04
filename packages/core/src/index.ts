@@ -16,19 +16,56 @@ export type {
   SkillRegistryItem,
   ToolRecommendation,
   ProjectStatus,
+  MarketplaceSkill,
+  MarketplaceSkillCandidate,
+  MarketplaceSkillInstallResult,
+  MarketplaceSkillSearchResult,
+  MarketplaceConflictLevel,
+  MarketplaceMcp,
+  MarketplaceMcpCandidate,
+  MarketplaceMcpInstallResult,
+  MarketplaceMcpSearchResult,
+  MemoryHandoff,
+  BootstrapSession,
+  SpecWeftInitResult,
 } from "./schemas/types.js";
 
 export { resolveRepoPath } from "./utils/path.js";
+export {
+  createBootstrapSession,
+  initializeSpecWeftProject,
+} from "./bootstrap/bootstrap-session.js";
 export { initializeProject, scanProject } from "./scanner/project-scanner.js";
 export { recommendForProject } from "./recommendations/recommender.js";
+export {
+  createMarketplaceKeywords,
+  recommendMarketplaceSkills,
+} from "./marketplace/skills-marketplace.js";
+export {
+  createMarketplaceMcpKeywords,
+  createMcpManifestFromCandidate,
+  recommendMarketplaceMcps,
+} from "./marketplace/mcp-marketplace.js";
 export {
   analyzeCurrentDiff,
   createReviewDraft,
   createReviewReport,
 } from "./diff/diff-analyzer.js";
-export { recallSessions, saveSessionMemory } from "./memory/session-memory.js";
+export {
+  createMemoryHandoff,
+  recallSessions,
+  saveSessionMemory,
+} from "./memory/session-memory.js";
 export { currentProjectStatus } from "./status/project-status.js";
-export { initializeGlobalPools, listMcpPool, listSkillPool } from "./pool/pool-manager.js";
+export {
+  createMarketplaceMcpId,
+  createMarketplaceSkillId,
+  initializeGlobalPools,
+  installMarketplaceMcp,
+  installMarketplaceSkill,
+  listMcpPool,
+  listSkillPool,
+} from "./pool/pool-manager.js";
 export {
   applyProjectMcp,
   applyProjectSkill,

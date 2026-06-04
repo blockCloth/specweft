@@ -36,10 +36,15 @@ export function createReviewDraft(diff: DiffSummary): ReviewDraft {
   if (diff.changedFiles.length === 0) {
     return {
       summary: "No uncommitted git diff was found.",
+      intent: "There is no local diff to explain yet.",
       mainChanges: [],
+      reviewWalkthrough: ["Create or save a local change, then run review again."],
+      impactAreas: [],
+      overEngineeringSignals: [],
       reviewChecklist: ["Confirm there are saved file changes or staged changes to review."],
       risks: [],
       testSuggestions: [],
+      nextThreadPrompt: "No local change context is available yet.",
     };
   }
 
@@ -56,10 +61,16 @@ export function createReviewDraft(diff: DiffSummary): ReviewDraft {
     || /(^|\/)\.?(env|config)/.test(file),
   );
   const hasDocs = changedPaths.some((file) => /\.(md|mdx|txt|rst)$/.test(file));
+  const impactAreas = createImpactAreas(changedPaths);
+  const summary = `Current diff changes ${diff.stats.files} file(s), with ${diff.stats.additions} additions and ${diff.stats.deletions} deletions.`;
 
   return {
-    summary: `Current diff changes ${diff.stats.files} file(s), with ${diff.stats.additions} additions and ${diff.stats.deletions} deletions.`,
+    summary,
+    intent: createReviewIntent(diff.changedFiles, impactAreas),
     mainChanges: diff.changedFiles.map((file) => describeFileChange(file)),
+    reviewWalkthrough: createReviewWalkthrough(diff.changedFiles),
+    impactAreas,
+    overEngineeringSignals: createOverEngineeringSignals(diff),
     reviewChecklist: [
       "Check whether each changed file is directly related to the current requirement.",
       "Review whether the new abstraction level is necessary for the requirement size.",
@@ -70,6 +81,7 @@ export function createReviewDraft(diff: DiffSummary): ReviewDraft {
     ],
     risks: createReviewRisks({ hasTests, hasRuntimeCode, hasConfig, hasDocs }),
     testSuggestions: createTestSuggestions({ hasTests, hasRuntimeCode, hasConfig, hasDocs }),
+    nextThreadPrompt: createNextThreadPrompt(summary, diff.changedFiles, impactAreas),
   };
 }
 
@@ -94,6 +106,8 @@ export async function createReviewReport(
       keywords: createReviewKeywords(profile, diff, reportTitle),
       summary: review.summary,
       changedFiles: diff.changedFiles.map((file) => file.path),
+      reviewPath: reportPath,
+      nextThreadPrompt: review.nextThreadPrompt,
     },
     ttlDays,
   );
@@ -277,9 +291,25 @@ function formatReviewMarkdown(
     "",
     review.summary,
     "",
+    "## Intent",
+    "",
+    review.intent,
+    "",
     "## Main Changes",
     "",
     formatMarkdownList(review.mainChanges),
+    "",
+    "## How To Review",
+    "",
+    formatMarkdownList(review.reviewWalkthrough),
+    "",
+    "## Impact Areas",
+    "",
+    formatMarkdownList(review.impactAreas),
+    "",
+    "## Over-Engineering Signals",
+    "",
+    formatMarkdownList(review.overEngineeringSignals),
     "",
     "## Review Checklist",
     "",
@@ -300,6 +330,10 @@ function formatReviewMarkdown(
         (file) => `${file.path} (+${file.additions} / -${file.deletions})`,
       ),
     ),
+    "",
+    "## Next Thread Prompt",
+    "",
+    review.nextThreadPrompt,
     "",
   ].join("\n");
 }
@@ -341,6 +375,74 @@ function createReviewKeywords(
   ];
 
   return [...new Set(rawKeywords.map((item) => item.trim()).filter(Boolean))].slice(0, 20);
+}
+
+function createReviewIntent(files: DiffFileChange[], areas: string[]): string {
+  const primaryArea = areas[0] ?? "project";
+  const verbs = new Set(files.map((file) => file.changeType === "unknown" ? "modified" : file.changeType));
+  return `This change appears to ${[...verbs].join(", ")} ${primaryArea} behavior or support files. Start from the largest changed file, then verify smaller files are supporting the same requirement.`;
+}
+
+function createReviewWalkthrough(files: DiffFileChange[]): string[] {
+  return [...files]
+    .sort((left, right) => (right.additions + right.deletions) - (left.additions + left.deletions))
+    .slice(0, 6)
+    .map((file, index) => {
+      const area = detectFileArea(file.path);
+      const prefix = index === 0 ? "Start with" : "Then inspect";
+      return `${prefix} ${file.path}: ${area}, +${file.additions}/-${file.deletions}. Check whether this file carries the main behavior change or only supports it.`;
+    });
+}
+
+function createImpactAreas(paths: string[]): string[] {
+  const areas = new Set<string>();
+
+  for (const filePath of paths) {
+    areas.add(detectFileArea(filePath));
+    const firstSegment = filePath.split("/")[0];
+    if (firstSegment && firstSegment !== filePath) {
+      areas.add(`${firstSegment}/`);
+    }
+  }
+
+  return [...areas].slice(0, 10);
+}
+
+function createOverEngineeringSignals(diff: DiffSummary): string[] {
+  const signals: string[] = [];
+  const runtimeFiles = diff.changedFiles.filter((file) => detectFileArea(file.path) === "runtime code");
+  const totalDelta = diff.stats.additions + diff.stats.deletions;
+
+  if (runtimeFiles.length >= 5 && totalDelta < 160) {
+    signals.push("Many runtime files changed for a relatively small diff; check whether abstraction spread is necessary.");
+  }
+  if (diff.changedFiles.some((file) => /factory|manager|registry|adapter|provider/i.test(file.path))) {
+    signals.push("Abstraction-oriented file names changed; confirm the new layer removes real complexity.");
+  }
+  if (diff.changedFiles.some((file) => /types?|schema|interface/i.test(file.path)) && runtimeFiles.length > 0) {
+    signals.push("Shared types changed together with runtime code; review downstream compatibility.");
+  }
+  if (signals.length === 0) {
+    signals.push("No obvious over-engineering signal was detected by the rule-based review.");
+  }
+
+  return signals;
+}
+
+function createNextThreadPrompt(
+  summary: string,
+  files: DiffFileChange[],
+  areas: string[],
+): string {
+  const changedFiles = files.map((file) => file.path).slice(0, 8).join(", ") || "none";
+  const impactAreas = areas.slice(0, 6).join(", ") || "unknown";
+  return [
+    "Continue from this SpecWeft memory.",
+    summary,
+    `Impact areas: ${impactAreas}.`,
+    `Changed files: ${changedFiles}.`,
+    "First explain the previous change, then continue only after checking the current git diff.",
+  ].join(" ");
 }
 
 function slugify(value: string): string {
