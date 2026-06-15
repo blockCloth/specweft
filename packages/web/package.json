@@ -1,6 +1,6 @@
 {
   "name": "@specweft/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local Web UI for managing SpecWeft project context, MCPs, Skills, review, and memory.",
   "license": "MIT",
   "type": "module",

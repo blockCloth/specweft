@@ -1,6 +1,6 @@
 {
   "name": "@specweft/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Core project profiling, tool assembly, review, and memory logic for SpecWeft.",
   "license": "MIT",
   "type": "module",
