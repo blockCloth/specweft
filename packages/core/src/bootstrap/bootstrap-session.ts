@@ -13,6 +13,7 @@ import { recommendForProject } from "../recommendations/recommender.js";
 import { initializeProject, scanProject } from "../scanner/project-scanner.js";
 import { applyProjectMcp, applyProjectSkill } from "../selection/selection-manager.js";
 import { projectConfigDir } from "../utils/path.js";
+import { createCapabilityCenter } from "../capabilities/capability-center.js";
 
 const DEFAULT_MCP_IDS = ["filesystem", "git"];
 const DEFAULT_SKILL_IDS = ["diff-explainer", "test-planner"];
@@ -23,8 +24,9 @@ export async function createBootstrapSession(
   memoryLimit = 5,
 ): Promise<BootstrapSession> {
   const profile = await scanProject(repoPath);
-  const [recommendations, assembly, handoff] = await Promise.all([
+  const [recommendations, capabilityCenter, assembly, handoff] = await Promise.all([
     recommendForProject(profile, repoPath),
+    createCapabilityCenter(profile, repoPath),
     createRuntimeAssembly(repoPath),
     createMemoryHandoff(repoPath, profile, keyword, memoryLimit),
   ]);
@@ -35,6 +37,7 @@ export async function createBootstrapSession(
     generatedAt: new Date().toISOString(),
     profile,
     recommendations,
+    capabilityCenter,
     assembly,
     handoff,
     workflow: createAgentWorkflow(),

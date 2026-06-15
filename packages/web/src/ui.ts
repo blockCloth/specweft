@@ -142,7 +142,7 @@ export function renderApp(repoPath: string): string {
 
       .repo-row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr) auto auto auto;
         gap: 10px;
       }
 
@@ -540,29 +540,50 @@ export function renderApp(repoPath: string): string {
         text-align: center;
       }
 
-      .markdown-body {
+      .review-report {
         display: grid;
-        gap: 10px;
+        gap: 12px;
       }
 
-      .markdown-body h1,
-      .markdown-body h2,
-      .markdown-body h3 {
-        margin: 8px 0 0;
+      .specweft-review-report {
+        display: grid;
+        gap: 12px;
       }
 
-      .markdown-body h1 {
-        font-size: 22px;
+      .specweft-review-report section {
+        padding: 12px;
+        border: 1px solid rgba(121, 169, 237, 0.16);
+        border-radius: 12px;
+        background: rgba(246, 251, 255, 0.66);
       }
 
-      .markdown-body h2 {
-        font-size: 17px;
+      .specweft-review-report h1,
+      .specweft-review-report h2 {
+        margin: 0 0 8px;
       }
 
-      .markdown-body ul {
+      .specweft-review-report h1 {
+        font-size: 20px;
+      }
+
+      .specweft-review-report h2 {
+        font-size: 15px;
+      }
+
+      .specweft-review-report p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .specweft-review-report ul {
         margin: 0;
         padding-left: 20px;
         line-height: 1.7;
+      }
+
+      .specweft-review-hero {
+        background: rgba(232, 242, 255, 0.62);
       }
 
       .inline-code {
@@ -660,7 +681,7 @@ export function renderApp(repoPath: string): string {
         </label>
         <nav class="nav">
           <button class="active" data-view-button="overview" data-i18n="navOverview">总览</button>
-          <button data-view-button="tools" data-i18n="navTools">工具</button>
+          <button data-view-button="tools" data-i18n="navTools">能力中心</button>
           <button data-view-button="runtime" data-i18n="navRuntime">运行配置</button>
           <button data-view-button="review" data-i18n="navReview">代码讲解</button>
           <button data-view-button="memory" data-i18n="navMemory">记忆</button>
@@ -671,7 +692,9 @@ export function renderApp(repoPath: string): string {
       <main class="main">
         <div class="topbar">
           <div class="repo-row">
+            <select id="projectSelect" class="select" aria-label="Project"></select>
             <input id="repoInput" class="input" aria-label="Repository path" />
+            <button id="registerProjectButton" class="btn" data-i18n="registerProject">登记项目</button>
             <button id="refreshButton" class="btn primary" data-i18n="refresh">刷新</button>
             <button id="poolButton" class="btn" data-i18n="initPool">初始化工具池</button>
           </div>
@@ -700,14 +723,15 @@ export function renderApp(repoPath: string): string {
 
         <section id="tools" class="view">
           <div class="section-title">
-            <h1 data-i18n="tools">工具</h1>
+            <h1 data-i18n="tools">能力中心</h1>
             <div class="toolbar">
               <select id="toolFilterSelect" class="select toolbar-select" aria-label="Tool type filter">
                 <option value="all" data-i18n="filterAll">全部</option>
                 <option value="mcp" data-i18n="filterMcp">MCP</option>
                 <option value="skill" data-i18n="filterSkill">Skill</option>
+                <option value="cli" data-i18n="filterCli">CLI</option>
               </select>
-              <button id="recommendButton" class="btn primary" data-i18n="refreshRecommendations">刷新推荐</button>
+              <button id="recommendButton" class="btn primary" data-i18n="refreshRecommendations">刷新能力</button>
             </div>
           </div>
           <div class="panel table-wrap">
@@ -718,7 +742,7 @@ export function renderApp(repoPath: string): string {
                   <th data-i18n="type">类型</th>
                   <th data-i18n="status">状态</th>
                   <th data-i18n="risk">风险</th>
-                  <th data-i18n="reason">原因</th>
+                  <th data-i18n="reason">原因 / 权限</th>
                   <th data-i18n="actions">操作</th>
                 </tr>
               </thead>
@@ -803,7 +827,7 @@ export function renderApp(repoPath: string): string {
         "zh-CN": {
           brandSubtitle: "本地 Agent 控制台",
           navOverview: "总览",
-          navTools: "工具",
+          navTools: "能力中心",
           navRuntime: "运行配置",
           navReview: "代码讲解",
           navMemory: "记忆",
@@ -813,13 +837,17 @@ export function renderApp(repoPath: string): string {
           initPool: "初始化工具池",
           overview: "总览",
           project: "项目",
+          projectSelectorPlaceholder: "选择已登记项目",
+          registerProject: "登记项目",
+          projectRegistered: "项目已登记",
           languages: "语言",
           enabledTools: "已启用工具",
-          tools: "工具",
+          tools: "能力中心",
           filterAll: "全部",
           filterMcp: "MCP",
           filterSkill: "Skill",
-          noToolsForFilter: "当前筛选下没有工具。",
+          filterCli: "CLI",
+          noToolsForFilter: "当前筛选下没有能力。",
           marketplaceMcps: "市场 MCP 候选",
           marketplaceMcpNotice: "根据项目画像和需求关键词搜索 MCP 候选，只写入 SpecWeft 工具池，不会直接修改 Codex 或 Claude 全局配置。",
           marketplaceMcpKeywordPlaceholder: "搜索 MCP 关键词，例如 github、playwright、postgres",
@@ -856,7 +884,7 @@ export function renderApp(repoPath: string): string {
           marketplaceSkillApplied: "市场 Skill 已加入并启用",
           stars: "Stars",
           forks: "Forks",
-          refreshRecommendations: "刷新推荐",
+          refreshRecommendations: "刷新能力",
           name: "名称",
           type: "类型",
           status: "状态",
@@ -902,6 +930,9 @@ export function renderApp(repoPath: string): string {
           risk_high: "高",
           type_mcp: "MCP",
           type_skill: "Skill",
+          type_cli: "CLI",
+          type_hook: "Hook",
+          status_available: "可用",
           noMcpServers: "当前项目还没有启用 MCP 服务。",
           noSkills: "当前项目还没有启用 Skill。",
           mcpServers: "MCP 服务",
@@ -930,7 +961,7 @@ export function renderApp(repoPath: string): string {
         "en-US": {
           brandSubtitle: "Local agent console",
           navOverview: "Overview",
-          navTools: "Tools",
+          navTools: "Capability Center",
           navRuntime: "Runtime",
           navReview: "Review",
           navMemory: "Memory",
@@ -940,12 +971,16 @@ export function renderApp(repoPath: string): string {
           initPool: "Init Pool",
           overview: "Overview",
           project: "Project",
+          projectSelectorPlaceholder: "Select registered project",
+          registerProject: "Register Project",
+          projectRegistered: "Project registered",
           languages: "Languages",
           enabledTools: "Enabled Tools",
-          tools: "Tools",
+          tools: "Capability Center",
           filterAll: "All",
           filterMcp: "MCP",
           filterSkill: "Skill",
+          filterCli: "CLI",
           noToolsForFilter: "No tools match this filter.",
           marketplaceMcps: "Marketplace MCP Candidates",
           marketplaceMcpNotice: "Search MCP candidates from the project profile and requirement keywords. SpecWeft writes them to its tool pool and does not modify global Codex or Claude config directly.",
@@ -983,7 +1018,7 @@ export function renderApp(repoPath: string): string {
           marketplaceSkillApplied: "Marketplace Skill added and enabled",
           stars: "Stars",
           forks: "Forks",
-          refreshRecommendations: "Refresh Recommendations",
+          refreshRecommendations: "Refresh Capabilities",
           name: "Name",
           type: "Type",
           status: "Status",
@@ -1029,6 +1064,9 @@ export function renderApp(repoPath: string): string {
           risk_high: "High",
           type_mcp: "MCP",
           type_skill: "Skill",
+          type_cli: "CLI",
+          type_hook: "Hook",
+          status_available: "Available",
           noMcpServers: "No MCP servers are enabled for this project.",
           noSkills: "No Skills are enabled for this project.",
           mcpServers: "MCP Servers",
@@ -1058,12 +1096,14 @@ export function renderApp(repoPath: string): string {
 
       const state = {
         repoPath: "",
+        projects: [],
         dashboard: undefined,
         locale: localStorage.getItem("specweft.locale") || "zh-CN",
         toolFilter: localStorage.getItem("specweft.toolFilter") || "all"
       };
 
       const repoInput = document.getElementById("repoInput");
+      const projectSelect = document.getElementById("projectSelect");
       const statusLine = document.getElementById("statusLine");
       const toast = document.getElementById("toast");
       const languageSelect = document.getElementById("languageSelect");
@@ -1083,6 +1123,7 @@ export function renderApp(repoPath: string): string {
         });
         languageSelect.value = state.locale;
         toolFilterSelect.value = state.toolFilter;
+        renderProjectOptions();
         const statusKey = statusLine.dataset.statusKey || "idle";
         statusLine.textContent = t(statusKey);
         if (state.dashboard) {
@@ -1121,16 +1162,36 @@ export function renderApp(repoPath: string): string {
         state.repoPath = data.profile.rootPath;
         state.dashboard = data;
         repoInput.value = state.repoPath;
+        await loadProjects(state.repoPath);
         renderDashboard(data);
         setStatus("ready");
+      }
+
+      async function loadProjects(activePath = repoInput.value.trim()) {
+        const registry = await api("/api/projects");
+        state.projects = registry.projects || [];
+        renderProjectOptions(activePath || registry.activeProjectPath || "");
+      }
+
+      function renderProjectOptions(activePath = repoInput.value.trim()) {
+        const projects = state.projects || [];
+        projectSelect.innerHTML = [
+          "<option value=''>" + escapeHtml(t("projectSelectorPlaceholder")) + "</option>",
+          ...projects.map((project) => {
+            const label = project.name + " - " + project.rootPath;
+            return "<option value='" + escapeHtml(project.rootPath) + "'>" + escapeHtml(label) + "</option>";
+          })
+        ].join("");
+        projectSelect.value = projects.some((project) => project.rootPath === activePath) ? activePath : "";
       }
 
       function renderDashboard(data) {
         document.getElementById("projectName").textContent = data.profile.name;
         document.getElementById("languages").textContent = data.profile.languages.join(", ") || "-";
-        const enabled = data.recommendations.filter((item) => item.status === "enabled").length;
+        const enabled = data.capabilityCenter?.summary?.enabled
+          ?? data.recommendations.filter((item) => item.status === "enabled").length;
         document.getElementById("enabledCount").textContent = String(enabled);
-        renderRecommendations(data.recommendations);
+        renderCapabilities(data.capabilityCenter?.capabilities || data.recommendations);
         renderMarketplaceMcps(data.marketplaceMcps);
         renderMarketplaceSkills(data.marketplaceSkills);
         renderAssembly(data.assembly);
@@ -1183,10 +1244,10 @@ export function renderApp(repoPath: string): string {
             [t("memoryId"), data.memory?.id || "-"],
             [t("expiresAt"), data.memory?.expiresAt || "-"]
           ])),
-          sectionCard(t("summary"), "<p>" + escapeHtml(data.memory?.summary || "-") + "</p>"),
+          sectionCard(t("summary"), "<p>" + escapeHtml(data.review?.summary || data.memory?.summary || "-") + "</p>"),
           sectionCard(t("keywords"), listHtml(data.memory?.keywords?.length ? data.memory.keywords : [t("noKeywords")])),
           sectionCard(t("changedFiles"), listHtml(data.memory?.changedFiles?.length ? data.memory.changedFiles : [t("noChangedFiles")])),
-          sectionCard(t("review"), markdownToHtml(data.markdown || ""))
+          sectionCard(t("review"), "<div class='review-report'>" + (data.html || "") + "</div>")
         ].join("");
       }
 
@@ -1236,12 +1297,12 @@ export function renderApp(repoPath: string): string {
         ].join("");
       }
 
-      function renderRecommendations(items) {
+      function renderCapabilities(items) {
         const rows = document.getElementById("recommendationRows");
         rows.innerHTML = "";
         const visibleItems = state.toolFilter === "all"
           ? items
-          : items.filter((item) => item.type === state.toolFilter);
+          : items.filter((item) => capabilityKind(item) === state.toolFilter);
 
         if (visibleItems.length === 0) {
           const tr = document.createElement("tr");
@@ -1252,22 +1313,44 @@ export function renderApp(repoPath: string): string {
 
         for (const item of visibleItems) {
           const tr = document.createElement("tr");
+          const kind = capabilityKind(item);
           tr.innerHTML = [
             "<td><strong>" + escapeHtml(item.name) + "</strong><br><span class='muted'>" + escapeHtml(item.id) + "</span></td>",
-            "<td>" + escapeHtml(t("type_" + item.type)) + "</td>",
+            "<td>" + escapeHtml(t("type_" + kind)) + "</td>",
             "<td><span class='tag " + escapeHtml(item.status) + "'>" + escapeHtml(t("status_" + item.status)) + "</span></td>",
             "<td><span class='tag'>" + escapeHtml(t("risk_" + item.risk)) + "</span></td>",
-            "<td>" + escapeHtml(item.reason) + "</td>",
+            "<td>" + capabilityDetails(item) + "</td>",
             "<td><div class='actions'>" + actionButtons(item) + "</div></td>"
           ].join("");
           rows.appendChild(tr);
         }
       }
 
+      function capabilityKind(item) {
+        return item.kind || item.type;
+      }
+
+      function capabilityDetails(item) {
+        const parts = [];
+        if (item.reason) {
+          parts.push("<p>" + escapeHtml(item.reason) + "</p>");
+        }
+        if (item.permissions?.length) {
+          parts.push("<p><strong>" + escapeHtml(t("permissions")) + ":</strong> " + escapeHtml(item.permissions.join(", ")) + "</p>");
+        }
+        if (item.installCommand) {
+          parts.push("<p><strong>" + escapeHtml(t("command")) + ":</strong> " + inlineCode(item.installCommand) + "</p>");
+        }
+        if (item.runCommand && capabilityKind(item) === "cli") {
+          parts.push("<p><strong>" + escapeHtml(t("clientCommand")) + ":</strong> " + inlineCode(item.runCommand) + "</p>");
+        }
+        return parts.join("") || escapeHtml(item.description || "-");
+      }
+
       function renderMarketplaceSkills(result) {
         const container = document.getElementById("marketplaceSkills");
 
-        if (state.toolFilter === "mcp") {
+        if (state.toolFilter === "mcp" || state.toolFilter === "cli") {
           container.innerHTML = emptyState(t("marketplaceHiddenByFilter"));
           return;
         }
@@ -1318,7 +1401,7 @@ export function renderApp(repoPath: string): string {
       function renderMarketplaceMcps(result) {
         const container = document.getElementById("marketplaceMcps");
 
-        if (state.toolFilter === "skill") {
+        if (state.toolFilter === "skill" || state.toolFilter === "cli") {
           container.innerHTML = emptyState(t("marketplaceMcpHiddenByFilter"));
           return;
         }
@@ -1373,7 +1456,10 @@ export function renderApp(repoPath: string): string {
       }
 
       function actionButtons(item) {
-        const type = item.type;
+        const type = capabilityKind(item);
+        if (type !== "mcp" && type !== "skill") {
+          return "<span class='tag'>" + escapeHtml(item.authRequired ? "Auth" : "Local") + "</span>";
+        }
         const id = escapeHtml(item.id);
         return [
           "<button class='btn primary' data-action='apply' data-type='" + type + "' data-id='" + id + "'>" + escapeHtml(t("actionEnable")) + "</button>",
@@ -1409,60 +1495,6 @@ export function renderApp(repoPath: string): string {
 
       function inlineCode(value) {
         return "<span class='inline-code'>" + escapeHtml(value) + "</span>";
-      }
-
-      function markdownToHtml(markdown) {
-        const lines = markdown.split("\\n");
-        const html = [];
-        let listItems = [];
-
-        function flushList() {
-          if (listItems.length === 0) {
-            return;
-          }
-          html.push("<ul>" + listItems.map((item) => "<li>" + formatInlineMarkdown(item) + "</li>").join("") + "</ul>");
-          listItems = [];
-        }
-
-        for (const line of lines) {
-          if (!line.trim()) {
-            flushList();
-            continue;
-          }
-
-          if (line.startsWith("# ")) {
-            flushList();
-            html.push("<h1>" + escapeHtml(line.slice(2)) + "</h1>");
-            continue;
-          }
-
-          if (line.startsWith("## ")) {
-            flushList();
-            html.push("<h2>" + escapeHtml(line.slice(3)) + "</h2>");
-            continue;
-          }
-
-          if (line.startsWith("### ")) {
-            flushList();
-            html.push("<h3>" + escapeHtml(line.slice(4)) + "</h3>");
-            continue;
-          }
-
-          if (line.startsWith("- ")) {
-            listItems.push(line.slice(2));
-            continue;
-          }
-
-          flushList();
-          html.push("<p>" + formatInlineMarkdown(line) + "</p>");
-        }
-
-        flushList();
-        return "<div class='markdown-body'>" + html.join("") + "</div>";
-      }
-
-      function formatInlineMarkdown(value) {
-        return escapeHtml(value).replace(/\\\`([^\\\`]+)\\\`/g, "<span class='inline-code'>$1</span>");
       }
 
       function escapeHtml(value) {
@@ -1548,6 +1580,18 @@ export function renderApp(repoPath: string): string {
 
       document.getElementById("refreshButton").addEventListener("click", () => loadDashboard().catch((error) => showToast(error.message)));
       document.getElementById("recommendButton").addEventListener("click", () => loadDashboard().catch((error) => showToast(error.message)));
+      projectSelect.addEventListener("change", async () => {
+        if (!projectSelect.value) {
+          return;
+        }
+
+        repoInput.value = projectSelect.value;
+        await api("/api/projects/active", {
+          method: "POST",
+          body: JSON.stringify({ repoPath: repoInput.value })
+        });
+        await loadDashboard();
+      });
       languageSelect.addEventListener("change", () => {
         state.locale = languageSelect.value;
         localStorage.setItem("specweft.locale", state.locale);
@@ -1566,6 +1610,21 @@ export function renderApp(repoPath: string): string {
           showToast(t("poolInitialized"));
         } catch (error) {
           showToast(error.message);
+        }
+      });
+      document.getElementById("registerProjectButton").addEventListener("click", async () => {
+        try {
+          setStatus("updating");
+          await api("/api/projects/register", {
+            method: "POST",
+            body: JSON.stringify({ repoPath: repoInput.value })
+          });
+          await loadProjects(repoInput.value);
+          await loadDashboard();
+          showToast(t("projectRegistered"));
+        } catch (error) {
+          showToast(error.message);
+          setStatus("error");
         }
       });
       document.getElementById("assemblyButton").addEventListener("click", async () => {
@@ -1617,9 +1676,10 @@ export function renderApp(repoPath: string): string {
         showToast(t("handoffReady"));
       });
 
-      repoInput.value = ${JSON.stringify(repoPath)};
+      repoInput.value = new URLSearchParams(window.location.search).get("repo") || ${JSON.stringify(repoPath)};
       applyLocale();
       renderEmptyOutputs();
+      loadProjects(repoInput.value).catch((error) => showToast(error.message));
       loadDashboard().catch((error) => {
         showToast(error.message);
         setStatus("error");

@@ -14,6 +14,39 @@ export type ProjectProfile = {
 
 export type RecommendationRisk = "low" | "medium" | "high";
 
+export type CapabilityKind = "mcp" | "skill" | "cli" | "hook";
+
+export type CapabilityStatus = "available" | "recommended" | "enabled" | "disabled" | "ignored";
+
+export type CapabilityManifest = {
+  id: string;
+  name: string;
+  kind: CapabilityKind;
+  description: string;
+  source: PoolSource;
+  installCommand?: string;
+  runCommand?: string;
+  permissions: string[];
+  authRequired: boolean;
+  risk: PoolRisk;
+  tags: string[];
+  compatibleClients: Array<"codex" | "claude" | "cursor" | "gemini" | "generic">;
+  status: CapabilityStatus;
+  reason?: string;
+};
+
+export type CapabilityCenter = {
+  project: ProjectProfile;
+  generatedAt: string;
+  capabilities: CapabilityManifest[];
+  summary: {
+    total: number;
+    recommended: number;
+    enabled: number;
+    highRisk: number;
+  };
+};
+
 export type ToolRecommendation = {
   id: string;
   type: "mcp" | "skill";
@@ -136,6 +169,8 @@ export type ReviewReport = {
   title: string;
   reportPath: string;
   markdown: string;
+  html: string;
+  review: ReviewDraft;
   memory: SessionMemory;
 };
 
@@ -170,6 +205,7 @@ export type BootstrapSession = {
   generatedAt: string;
   profile: ProjectProfile;
   recommendations: ToolRecommendation[];
+  capabilityCenter: CapabilityCenter;
   assembly: RuntimeAssembly;
   handoff: MemoryHandoff;
   workflow: {
@@ -198,6 +234,21 @@ export type ProjectStatus = {
   projectName: string;
   skills: string[];
   mcps: string[];
+};
+
+export type RegisteredProject = {
+  id: string;
+  name: string;
+  rootPath: string;
+  languages: string[];
+  frameworks: string[];
+  lastOpenedAt: string;
+};
+
+export type ProjectRegistryFile = {
+  version: number;
+  activeProjectPath?: string;
+  projects: RegisteredProject[];
 };
 
 export type PoolSource = "builtin" | "marketplace" | "manual";

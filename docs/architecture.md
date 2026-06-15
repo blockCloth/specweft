@@ -7,7 +7,7 @@ CLI / Web / MCP adapters
         |
       Core
         |
-Scanner / Pool / Recommender / Diff / Memory / Policy
+Scanner / Pool / Capability Center / Recommender / Diff / Memory / Policy
         |
 Global ~/.specweft pools + local project .specweft storage
 ```
@@ -34,6 +34,7 @@ It wraps core functions as MCP tools:
 ```text
 specweft.get_project_profile
 specweft.recommend_project_tools
+specweft.get_capability_center
 specweft.get_runtime_assembly
 specweft.review_current_diff
 specweft.save_session_memory
@@ -59,11 +60,25 @@ return JSON text results
 Global pools:
 
 ```text
+~/.specweft/projects.json
 ~/.specweft/mcp/registry.json
 ~/.specweft/mcp/manifests/*.json
 ~/.specweft/skills/registry.json
 ~/.specweft/skills/<skill-id>/SKILL.md
 ```
+
+## Capability Center
+
+Capability Center is the unified read model for agent abilities:
+
+```text
+MCP pool + Skill pool + built-in CLI capability templates
+        |
+        -> capability manifest list
+        -> status, risk, permissions, auth needs, install/run command
+```
+
+MCP and Skill capabilities can be enabled for a project. CLI capabilities are currently recommendation-only: SpecWeft shows install and run commands, but it does not execute them automatically.
 
 Project storage:
 
@@ -98,12 +113,16 @@ The MCP manifest stores runtime details, permissions, env var names, and risk le
 
 ## Review And Memory Flow
 
-The review feature now creates two artifacts from one command:
+The review feature now creates three artifacts from one command:
 
 ```text
-git diff -> review draft -> markdown report
-                    |
-                    -> session memory
+git diff -> structured review draft -> markdown report
+                              |
+                              -> escaped HTML report
+                              |
+                              -> session memory
 ```
 
-The markdown report is for human review. The session memory is for future recall when a user opens a new thread and wants to recover the previous requirement context.
+The CLI prints the structured review as readable Chinese text. The Web UI renders the escaped HTML report directly, so the browser does not need to parse Markdown or inspect JSON.
+
+The markdown report is kept on disk for durable local review. The session memory is for future recall when a user opens a new thread and wants to recover the previous requirement context.

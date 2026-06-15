@@ -8,6 +8,7 @@ It focuses on the parts around the coding session:
 
 - project profiling
 - MCP and Skill selection
+- unified MCP, Skill, and CLI capability recommendations
 - runtime config assembly
 - change review notes
 - short-lived session memory
@@ -24,9 +25,10 @@ This project is still early. The current version includes a working CLI, a local
 - Scan a project and write `.specweft/profile.json`
 - Initialize a global MCP and Skill pool under `~/.specweft`
 - Recommend MCP servers and Skills for a project
+- Show a unified Capability Center across MCPs, Skills, and local CLI tools
 - Enable, disable, or ignore project-level MCP and Skill selections
 - Build runtime MCP and Skill assembly config
-- Generate review notes from the current git diff
+- Generate structured review explanations from the current git diff
 - Save review sessions into local memory
 - Recall recent sessions by keyword
 - Start a local Web UI
@@ -57,7 +59,7 @@ The Web UI starts at:
 http://localhost:4177
 ```
 
-If the port is already used by an old SpecWeft UI process, SpecWeft will stop it and reuse the same port. If another app is using the port, it will try the next available port.
+If a SpecWeft UI is already running on the port, SpecWeft reuses the existing UI and registers the current project into the global project list. If another app is using the port, it will try the next available port.
 
 ## Common Commands
 
@@ -65,6 +67,7 @@ If the port is already used by an old SpecWeft UI process, SpecWeft will stop it
 specweft init
 specweft start
 specweft mcp-inspect
+specweft capabilities
 specweft review --title "Implement MCP tools"
 specweft recall --keyword "MCP"
 specweft handoff --keyword "MCP"
@@ -73,7 +76,7 @@ specweft status
 
 After `specweft init`, Codex or Claude can use the MCP tool
 `specweft.bootstrap_session` at the beginning of a thread. That single tool
-returns the project profile, selected MCP/Skill assembly, recommendations,
+returns the project profile, Capability Center, selected MCP/Skill assembly, recommendations,
 recent memory handoff, and the expected review workflow.
 
 For local development inside this repository:
@@ -94,11 +97,11 @@ npm run handoff
 The local UI includes:
 
 - Overview: project profile and enabled tool count
-- Tools: MCP and Skill recommendations with type filtering
+- Capability Center: MCP, Skill, and CLI recommendations with type filtering, permissions, and risk notes
 - Marketplace MCPs: external MCP candidates, semantic search, risk notes, and user-confirmed install
 - Marketplace Skills: external Skill candidates, keyword search, conflict notes, and user-confirmed install
 - Runtime: assembled MCP and Skill runtime config
-- Review: readable review notes for the current diff
+- Review: readable HTML review reports for the current diff
 - Memory: recent session recall by keyword
 - Connect: MCP client config for Codex or Claude Code
 
@@ -133,6 +136,7 @@ Available MCP tools:
 - `specweft.bootstrap_session`
 - `specweft.get_project_profile`
 - `specweft.recommend_project_tools`
+- `specweft.get_capability_center`
 - `specweft.get_runtime_assembly`
 - `specweft.review_current_diff`
 - `specweft.save_session_memory`
@@ -169,6 +173,7 @@ Project-local files:
 Global files:
 
 ```text
+~/.specweft/projects.json
 ~/.specweft/mcp/
 ~/.specweft/skills/
 ```
@@ -216,6 +221,7 @@ It also runs a release smoke test from the generated tarballs:
 - install the packed packages into a temporary npm project
 - run `specweft init`
 - verify `mcp-inspect` exposes `specweft.bootstrap_session`
+- verify `mcp-inspect` exposes `specweft.get_capability_center`
 - verify `handoff` uses the current project
 - start the packed Web UI and call `/api/bootstrap`
 
@@ -242,6 +248,7 @@ SpecWeft 是一个面向 Codex、Claude Code、Cursor 以及其他 MCP 兼容工
 
 - 项目画像
 - MCP 和 Skill 选择
+- MCP、Skill 和 CLI 的统一能力推荐
 - 运行时配置组装
 - 代码修改讲解
 - 短期会话记忆
@@ -258,9 +265,11 @@ SpecWeft 是一个面向 Codex、Claude Code、Cursor 以及其他 MCP 兼容工
 - 扫描项目并生成 `.specweft/profile.json`
 - 初始化全局 MCP 和 Skill 池，存储在 `~/.specweft`
 - 根据项目推荐 MCP 和 Skill
+- 查看统一的能力中心，覆盖 MCP、Skill 和本地 CLI 工具
 - 对项目启用、禁用或忽略 MCP / Skill
 - 生成运行时 MCP 和 Skill 配置
 - 根据当前 git diff 生成代码讲解
+- 在 CLI 输出中文可读讲解，并在 Web UI 展示 HTML 报告
 - 将讲解保存成本地会话记忆
 - 通过关键词召回近期会话
 - 启动本地 Web UI
@@ -291,7 +300,7 @@ Web UI 默认地址：
 http://localhost:4177
 ```
 
-如果端口被旧的 SpecWeft UI 占用，会自动停止旧进程并继续使用该端口。如果端口被其他应用占用，会继续尝试后面的端口。
+如果该端口已经有 SpecWeft UI，会复用现有 UI，并把当前项目登记到全局项目列表。如果端口被其他应用占用，会继续尝试后面的端口。
 
 ## 常用命令
 
@@ -299,6 +308,7 @@ http://localhost:4177
 specweft init
 specweft start
 specweft mcp-inspect
+specweft capabilities
 specweft review --title "Implement MCP tools"
 specweft recall --keyword "MCP"
 specweft handoff --keyword "MCP"
@@ -306,7 +316,7 @@ specweft status
 ```
 
 执行过 `specweft init` 后，Codex 或 Claude 可以在线程开始时调用
-`specweft.bootstrap_session`。这个工具会一次性返回项目画像、已选择的
+`specweft.bootstrap_session`。这个工具会一次性返回项目画像、能力中心、已选择的
 MCP/Skill 装配结果、工具推荐、近期记忆交接和代码讲解工作流。
 
 如果是在本仓库内本地开发：
@@ -327,11 +337,11 @@ npm run handoff
 本地界面包含：
 
 - 总览：项目画像和已启用工具数量
-- 工具：MCP / Skill 推荐和类型筛选
+- 能力中心：MCP / Skill / CLI 推荐、类型筛选、权限和风险提示
 - 市场 MCP：外部 MCP 候选、需求语义搜索、风险提示，以及用户确认后的加入启用
 - 市场 Skill：外部 Skill 候选、关键词搜索、冲突提示，以及用户确认后的加入启用
 - 运行配置：当前项目的 MCP / Skill 组装结果
-- 代码讲解：基于当前 diff 生成可读说明
+- 代码讲解：基于当前 diff 生成结构化中文说明和 HTML 报告
 - 记忆：按关键词召回近期会话
 - 接入配置：给 Codex 或 Claude Code 使用的 MCP 配置
 
@@ -366,6 +376,7 @@ specweft mcp
 - `specweft.bootstrap_session`
 - `specweft.get_project_profile`
 - `specweft.recommend_project_tools`
+- `specweft.get_capability_center`
 - `specweft.get_runtime_assembly`
 - `specweft.review_current_diff`
 - `specweft.save_session_memory`
@@ -402,6 +413,7 @@ docs            产品和架构文档
 全局文件：
 
 ```text
+~/.specweft/projects.json
 ~/.specweft/mcp/
 ~/.specweft/skills/
 ```
@@ -449,6 +461,7 @@ specweft start
 - 安装到临时 npm 项目
 - 执行 `specweft init`
 - 确认 `mcp-inspect` 暴露 `specweft.bootstrap_session`
+- 确认 `mcp-inspect` 暴露 `specweft.get_capability_center`
 - 确认 `handoff` 使用当前项目
 - 启动打包后的 Web UI 并请求 `/api/bootstrap`
 

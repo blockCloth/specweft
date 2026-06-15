@@ -11,6 +11,7 @@ import { runPool } from "./commands/pool.js";
 import { printText } from "./output.js";
 import { runApply, runSelection } from "./commands/selection.js";
 import { runAssembly } from "./commands/assembly.js";
+import { runCapabilities } from "./commands/capabilities.js";
 import { runMcp } from "./commands/mcp.js";
 import { runMcpInspect } from "./commands/mcp-inspect.js";
 import { runStart } from "./commands/start.js";
@@ -37,6 +38,11 @@ async function main(): Promise<void> {
 
   if (args.command === "recommend") {
     await runRecommend(args.repo);
+    return;
+  }
+
+  if (args.command === "capabilities") {
+    await runCapabilities(args.repo);
     return;
   }
 
@@ -94,13 +100,15 @@ async function main(): Promise<void> {
 }
 
 function printHelp(): void {
-  printText(`SpecWeft
+  if (shouldUseEnglishHelp()) {
+    printText(`SpecWeft
 
 Usage:
   specweft init
   specweft start
   specweft mcp
   specweft mcp-inspect
+  specweft capabilities
   specweft review --title "Implement MCP tools"
   specweft recall --keyword "login"
   specweft handoff --keyword "login"
@@ -118,6 +126,7 @@ Commands:
   start       Start the local SpecWeft Web UI.
   open        Alias for start.
   recommend   Recommend MCP servers and skills for the project.
+  capabilities Show the unified MCP, Skill, and CLI capability center.
   review      Inspect current git diff and create a review draft.
   recall      Search recent local session memories by keyword.
   handoff     Create a new-thread memory handoff prompt.
@@ -135,6 +144,61 @@ Options:
   --title     Review title used when saving report and memory.
   --port      Web UI port. Defaults to 4177.
 `);
+    return;
+  }
+
+  printText(`SpecWeft
+
+用法:
+  specweft init
+  specweft start
+  specweft mcp
+  specweft mcp-inspect
+  specweft capabilities
+  specweft review --title "实现 MCP 工具"
+  specweft recall --keyword "登录"
+  specweft handoff --keyword "登录"
+  specweft pool init
+  specweft pool list mcp
+  specweft pool list skills
+  specweft apply mcp filesystem
+  specweft apply skill diff-explainer
+  specweft selection list
+  specweft selection disable:mcp filesystem
+  specweft assembly
+
+命令:
+  init        初始化项目画像、全局工具池、默认工具和 Agent 指令文件。
+  start       启动本地 SpecWeft Web 管理界面。
+  open        start 的别名。
+  recommend   根据当前项目推荐 MCP 服务和 Skills。
+  capabilities 查看统一的 MCP、Skill 和 CLI 能力中心。
+  review      分析当前 git diff，并生成本次修改说明。
+  recall      按关键词搜索最近的本地会话记忆。
+  handoff     生成新线程可用的记忆交接提示。
+  status      查看项目配置、记忆、MCP 和 Skill 状态。
+  pool        管理全局 MCP 和 Skill 池。
+  apply       为当前项目启用一个 MCP 或 Skill。
+  selection   查看、禁用或忽略当前项目的 MCP/Skill 选择。
+  assembly    生成当前项目的运行时 MCP 和 Skill 装配配置。
+  mcp-inspect 输出 MCP 客户端配置和 SpecWeft 暴露的工具名。
+  mcp         通过 stdio 启动 SpecWeft MCP Server，供 Claude/Codex 调用。
+
+选项:
+  --repo      项目路径，默认是当前目录。
+  --keyword   用于 recall/handoff 的关键词。
+  --title     保存 review 报告和记忆时使用的标题。
+  --port      Web UI 端口，默认是 4177。
+`);
+}
+
+function shouldUseEnglishHelp(): boolean {
+  const locale = process.env.LC_ALL
+    ?? process.env.LC_MESSAGES
+    ?? process.env.LANG
+    ?? "";
+
+  return locale.toLowerCase().startsWith("en");
 }
 
 // 顶层统一捕获错误，避免 async 函数抛错时 Node 打出冗长堆栈。

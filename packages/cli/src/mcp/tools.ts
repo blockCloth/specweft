@@ -4,6 +4,7 @@ import {
   applyProjectMcp,
   applyProjectSkill,
   createBootstrapSession,
+  createCapabilityCenter,
   createReviewDraft,
   createMemoryHandoff,
   createRuntimeAssembly,
@@ -157,6 +158,21 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const profile = await scanProject(resolvedRepoPath);
       const recommendations = await recommendForProject(profile, resolvedRepoPath);
       return jsonToolResult({ profile, recommendations });
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_capability_center",
+    {
+      title: "Get capability center",
+      description: "Return SpecWeft's unified MCP, Skill, and CLI capability recommendations with risk, permissions, and status for the current project.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      const capabilityCenter = await createCapabilityCenter(profile, resolvedRepoPath);
+      return jsonToolResult({ capabilityCenter });
     },
   );
 

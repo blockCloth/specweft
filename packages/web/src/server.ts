@@ -8,6 +8,7 @@ import {
   applyProjectMcp,
   applyProjectSkill,
   createBootstrapSession,
+  createCapabilityCenter,
   createMemoryHandoff,
   createReviewReport,
   createRuntimeAssembly,
@@ -19,11 +20,14 @@ import {
   initializeProject,
   installMarketplaceMcp,
   installMarketplaceSkill,
+  listRegisteredProjects,
   recallSessions,
   recommendForProject,
   recommendMarketplaceMcps,
   recommendMarketplaceSkills,
+  registerProject,
   scanProject,
+  setActiveProject,
 } from "@specweft/core";
 import { Hono } from "hono";
 import { renderApp } from "./ui.js";
@@ -54,24 +58,51 @@ type MarketplaceMcpBody = {
   mcp?: Parameters<typeof installMarketplaceMcp>[0];
 };
 
+type ProjectBody = {
+  repoPath?: string;
+};
+
 const app = new Hono();
 const cliOptions = parseArgs(process.argv.slice(2));
 let options = cliOptions;
 const execFileAsync = promisify(execFile);
 
-app.get("/", (context) => {
-  return context.html(renderApp(options.repoPath));
+app.get("/", async (context) => {
+  const requestedRepo = context.req.query("repo");
+  const registry = await listRegisteredProjects();
+  const repoPath = requestedRepo
+    ? resolveRequestRepo(requestedRepo)
+    : registry.activeProjectPath ?? options.repoPath;
+  return context.html(renderApp(repoPath));
+});
+
+app.get("/api/projects", async (context) => {
+  return context.json(await listRegisteredProjects());
+});
+
+app.post("/api/projects/register", async (context) => {
+  const body = await context.req.json<ProjectBody>();
+  const repoPath = resolveRequestRepo(body.repoPath);
+  return context.json(await registerProject(repoPath));
+});
+
+app.post("/api/projects/active", async (context) => {
+  const body = await context.req.json<ProjectBody>();
+  const repoPath = resolveRequestRepo(body.repoPath);
+  return context.json(await setActiveProject(repoPath));
 });
 
 app.get("/api/dashboard", async (context) => {
   const repoPath = resolveRequestRepo(context.req.query("repo"));
   await initializeProject(repoPath);
+  await registerProject(repoPath);
 
   const [profile, assembly, mcpInspect] = await Promise.all([
     scanProject(repoPath),
     createRuntimeAssembly(repoPath),
     createMcpInspect(repoPath),
   ]);
+  const capabilityCenter = await createCapabilityCenter(profile, repoPath);
   const recommendations = await recommendForProject(profile, repoPath);
   const marketplaceSkills = await recommendMarketplaceSkills(profile, recommendations);
   const marketplaceMcps = await recommendMarketplaceMcps(profile, recommendations);
@@ -79,6 +110,7 @@ app.get("/api/dashboard", async (context) => {
   return context.json({
     profile,
     recommendations,
+    capabilityCenter,
     marketplaceSkills,
     marketplaceMcps,
     assembly,
@@ -204,6 +236,8 @@ app.post("/api/review", async (context) => {
     title: report.title,
     reportPath: report.reportPath,
     memory: report.memory,
+    review: report.review,
+    html: report.html,
     markdown: report.markdown,
   });
 });
@@ -240,6 +274,7 @@ export async function startWebServer(webOptions: WebOptions): Promise<void> {
     repoPath: resolveWebRepoPath(webOptions.repoPath),
     port: webOptions.port,
   };
+  await registerProject(options.repoPath);
   await startServer(options.port);
 }
 
@@ -315,6 +350,7 @@ function createMcpInspect(repoPath: string) {
       "specweft.bootstrap_session",
       "specweft.get_project_profile",
       "specweft.recommend_project_tools",
+      "specweft.get_capability_center",
       "specweft.get_runtime_assembly",
       "specweft.review_current_diff",
       "specweft.save_session_memory",
@@ -330,17 +366,38 @@ function createMcpInspect(repoPath: string) {
     clientConfig: {
       mcpServers: {
         specweft: {
-          command: "node",
-          args: [resolveCliEntryPath(), "mcp", "--repo", repoPath],
+          command: resolveCliCommand(),
+          args: createCliArgs(repoPath),
         },
       },
     },
   };
 }
 
-function resolveCliEntryPath(): string {
+function resolveCliCommand(): string {
+  if (isInstalledPackageEntry()) {
+    return "specweft";
+  }
+
+  return "node";
+}
+
+function createCliArgs(repoPath: string): string[] {
+  if (isInstalledPackageEntry()) {
+    return ["mcp", "--repo", repoPath];
+  }
+
   const currentFile = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFile), "..", "..", "cli", "dist", "index.js");
+  return [
+    path.resolve(path.dirname(currentFile), "..", "..", "cli", "dist", "index.js"),
+    "mcp",
+    "--repo",
+    repoPath,
+  ];
+}
+
+function isInstalledPackageEntry(): boolean {
+  return fileURLToPath(import.meta.url).includes(`${path.sep}node_modules${path.sep}@specweft${path.sep}web${path.sep}`);
 }
 
 function isMainModule(): boolean {
@@ -348,9 +405,11 @@ function isMainModule(): boolean {
 }
 
 async function startServer(port: number, attempt = 0): Promise<void> {
-  const occupiedBySpecWeft = await killSpecWeftProcessOnPort(port);
-  if (occupiedBySpecWeft) {
-    process.stdout.write(`Stopped existing SpecWeft Web UI on port ${port}.\n`);
+  if (await reuseSpecWeftServer(port)) {
+    process.stdout.write(`SpecWeft Web UI already running: http://localhost:${port}\n`);
+    process.stdout.write(`Registered project: ${options.repoPath}\n`);
+    process.stdout.write(`Open: http://localhost:${port}/?repo=${encodeURIComponent(options.repoPath)}\n`);
+    return;
   }
 
   const server = serve(
@@ -376,9 +435,11 @@ async function startServer(port: number, attempt = 0): Promise<void> {
   });
 }
 
-async function killSpecWeftProcessOnPort(port: number): Promise<boolean> {
+async function reuseSpecWeftServer(port: number): Promise<boolean> {
   const pids = await findPidsOnPort(port);
-  let killed = false;
+  if (pids.length === 0) {
+    return false;
+  }
 
   for (const pid of pids) {
     const command = await readProcessCommand(pid);
@@ -386,15 +447,21 @@ async function killSpecWeftProcessOnPort(port: number): Promise<boolean> {
       continue;
     }
 
-    process.kill(Number(pid), "SIGTERM");
-    killed = true;
+    try {
+      const response = await fetch(`http://localhost:${port}/api/projects/register`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ repoPath: options.repoPath }),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
-  if (killed) {
-    await wait(350);
-  }
-
-  return killed;
+  return false;
 }
 
 async function findPidsOnPort(port: number): Promise<string[]> {
@@ -421,11 +488,7 @@ async function readProcessCommand(pid: string): Promise<string> {
 function isSpecWeftWebProcess(command: string): boolean {
   return command.includes("@specweft/web")
     || command.includes("packages/web")
-    || command.includes("src/server.ts");
-}
-
-async function wait(ms: number): Promise<void> {
-  await new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+    || command.includes("src/server.ts")
+    || (command.includes("specweft") && command.includes(" start"))
+    || (command.includes("packages/cli") && command.includes(" start"));
 }

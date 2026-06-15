@@ -7,6 +7,7 @@ const MCP_TOOL_NAMES = [
   "specweft.bootstrap_session",
   "specweft.get_project_profile",
   "specweft.recommend_project_tools",
+  "specweft.get_capability_center",
   "specweft.get_runtime_assembly",
   "specweft.review_current_diff",
   "specweft.save_session_memory",

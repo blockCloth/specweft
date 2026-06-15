@@ -2,13 +2,13 @@
 
 ## 这版实现了什么
 
-v0 先做最小闭环：
+v0.1 已经形成第一条可用闭环：
 
 ```text
-项目扫描 -> MCP/Skill 推荐 -> git diff review 草稿 -> 本地记忆检索
+项目扫描 -> 能力中心 -> MCP/Skill 装配 -> 结构化代码讲解 -> 本地记忆检索
 ```
 
-Phase 2 新增了全局 MCP Pool 和 Skill Pool：
+现在已经包含全局 MCP Pool 和 Skill Pool：
 
 ```text
 ~/.specweft/mcp/registry.json
@@ -17,7 +17,7 @@ Phase 2 新增了全局 MCP Pool 和 Skill Pool：
 ~/.specweft/skills/<skill-id>/SKILL.md
 ```
 
-还没有做 Web、MCP Server、LLM 解释。现在的目标是把工程结构和全局池模型搭稳。
+Web UI、MCP Server、多项目注册、市场 MCP/Skill 候选、Capability Center 和结构化 review 都已经接入。当前 review 仍然是规则版，不依赖 LLM；它先保证“稳定、可解释、可测试”，后面再接模型增强讲解质量。
 
 ## 你应该先读哪些文件
 
@@ -41,8 +41,9 @@ Phase 2 新增了全局 MCP Pool 和 Skill Pool：
 
 5. `packages/core/src/diff/diff-analyzer.ts`
    - 调用 `git diff`
+   - 结合 `git status` 识别未跟踪新增文件
    - 解析改动文件
-   - 生成 review 草稿
+   - 生成结构化 review、Markdown 报告和 Web HTML
 
 6. `packages/core/src/memory/session-memory.ts`
    - 保存和检索本地 session memory
@@ -91,6 +92,14 @@ Phase 2 新增了全局 MCP Pool 和 Skill Pool：
    - 本地 Web UI
    - 市场 Skill 搜索、加入并启用
    - 把 JSON 结果渲染成用户能读的 HTML 卡片
+
+16. `packages/core/src/capabilities/capability-center.ts`
+   - 把 MCP、Skill、本地 CLI 工具统一成能力列表
+   - 记录权限、风险、推荐原因、安装命令和运行命令
+
+17. `packages/core/src/projects/project-registry.ts`
+   - 在 `~/.specweft/projects.json` 记录多个项目
+   - 让一个 Web UI 可以切换管理不同项目
 
 ## 这版涉及的 TypeScript 知识
 
@@ -192,6 +201,7 @@ pnpm build
 pnpm specweft -- --help
 pnpm specweft -- init --repo .
 pnpm specweft -- recommend --repo .
+pnpm specweft -- capabilities --repo .
 pnpm specweft -- review --repo .
 pnpm specweft -- recall --repo . --keyword "login"
 pnpm specweft -- pool init
@@ -206,10 +216,10 @@ pnpm specweft start
 
 ## 下一版建议做什么
 
-v1 建议做：
+下一步建议做：
 
-1. 引入 `commander` 替换手写参数解析
-2. 引入 `zod` 做输入输出 schema 校验
-3. 把 memory 从 JSON 换成 SQLite
-4. `review` 命令输出 Markdown 报告
-5. 加 `save` 命令，把 review 保存成 session memory
+1. 给 Capability Center 增加更多 CLI 模板和风险规则
+2. 给 Web UI 增加能力详情页，而不是只在表格里展示
+3. 引入 `commander` 替换手写参数解析
+4. 把 memory 从 JSON 换成 SQLite
+5. 增加导入/导出能力池配置

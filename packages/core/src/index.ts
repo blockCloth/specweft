@@ -16,6 +16,8 @@ export type {
   SkillRegistryItem,
   ToolRecommendation,
   ProjectStatus,
+  RegisteredProject,
+  ProjectRegistryFile,
   MarketplaceSkill,
   MarketplaceSkillCandidate,
   MarketplaceSkillInstallResult,
@@ -28,6 +30,10 @@ export type {
   MemoryHandoff,
   BootstrapSession,
   SpecWeftInitResult,
+  CapabilityCenter,
+  CapabilityKind,
+  CapabilityManifest,
+  CapabilityStatus,
 } from "./schemas/types.js";
 
 export { resolveRepoPath } from "./utils/path.js";
@@ -36,6 +42,12 @@ export {
   initializeSpecWeftProject,
 } from "./bootstrap/bootstrap-session.js";
 export { initializeProject, scanProject } from "./scanner/project-scanner.js";
+export { createCapabilityCenter } from "./capabilities/capability-center.js";
+export {
+  listRegisteredProjects,
+  registerProject,
+  setActiveProject,
+} from "./projects/project-registry.js";
 export { recommendForProject } from "./recommendations/recommender.js";
 export {
   createMarketplaceKeywords,

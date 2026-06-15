@@ -5,6 +5,10 @@ export function specweftHome(): string {
   return process.env.SPECWEFT_HOME || path.join(os.homedir(), ".specweft");
 }
 
+export function projectRegistryPath(): string {
+  return path.join(specweftHome(), "projects.json");
+}
+
 export function mcpPoolDir(): string {
   return path.join(specweftHome(), "mcp");
 }

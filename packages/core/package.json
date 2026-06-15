@@ -37,10 +37,12 @@
   "files": [
     "dist/assembly/**/*",
     "dist/bootstrap/**/*",
+    "dist/capabilities/**/*",
     "dist/diff/**/*",
     "dist/marketplace/**/*",
     "dist/memory/**/*",
     "dist/pool/**/*",
+    "dist/projects/**/*",
     "dist/recommendations/**/*",
     "dist/scanner/**/*",
     "dist/schemas/**/*",

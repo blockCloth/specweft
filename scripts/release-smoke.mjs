@@ -55,7 +55,12 @@ await assertFileIncludes(path.join(projectDir, "CLAUDE.md"), "specweft.bootstrap
 
 const inspect = await runSpecWeft(["mcp-inspect"], projectDir);
 assertIncludes(inspect, "specweft.bootstrap_session", "mcp-inspect should expose bootstrap_session");
+assertIncludes(inspect, "specweft.get_capability_center", "mcp-inspect should expose get_capability_center");
 assertIncludes(inspect, "specweft.create_memory_handoff", "mcp-inspect should expose create_memory_handoff");
+
+const capabilities = await runSpecWeft(["capabilities"], projectDir);
+assertIncludes(capabilities, "cli-ripgrep", "capabilities should include built-in CLI capabilities");
+assertIncludes(capabilities, "filesystem", "capabilities should include MCP capabilities");
 
 const handoff = await runSpecWeft(["handoff"], projectDir);
 assertIncludes(handoff, "release-smoke-demo", "handoff should use current project");
