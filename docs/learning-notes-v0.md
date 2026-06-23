@@ -17,7 +17,7 @@ v0.1 已经形成第一条可用闭环：
 ~/.specweft/skills/<skill-id>/SKILL.md
 ```
 
-Web UI、MCP Server、多项目注册、市场 MCP/Skill 候选、Capability Center 和结构化 review 都已经接入。当前 review 仍然是规则版，不依赖 LLM；它先保证“稳定、可解释、可测试”，后面再接模型增强讲解质量。
+Web UI、MCP Server、多项目注册、多需求归档、市场 MCP/Skill 候选、Capability Center 和结构化 review 都已经接入。当前 review 仍然是规则版，不依赖 LLM；它先保证“稳定、可解释、可测试”，后面再接模型增强讲解质量。
 
 ## 你应该先读哪些文件
 
@@ -47,6 +47,7 @@ Web UI、MCP Server、多项目注册、市场 MCP/Skill 候选、Capability Cen
 
 6. `packages/core/src/memory/session-memory.ts`
    - 保存和检索本地 session memory
+   - 支持按 requirementId 收窄召回范围
    - 当前用 JSON 文件，后面会换 SQLite
 
 7. `packages/core/src/pool/pool-manager.ts`
@@ -100,6 +101,11 @@ Web UI、MCP Server、多项目注册、市场 MCP/Skill 候选、Capability Cen
 17. `packages/core/src/projects/project-registry.ts`
    - 在 `~/.specweft/projects.json` 记录多个项目
    - 让一个 Web UI 可以切换管理不同项目
+
+18. `packages/core/src/requirements/requirement-manager.ts`
+   - 在 `.specweft/requirements.json` 记录同一项目下的多个需求
+   - 管理当前 active requirement
+   - 把 review 报告和 memory 关联到具体需求
 
 ## 这版涉及的 TypeScript 知识
 
@@ -198,19 +204,19 @@ scan / recommend / diff / memory
 
 ```bash
 pnpm build
-pnpm specweft -- --help
-pnpm specweft -- init --repo .
-pnpm specweft -- recommend --repo .
-pnpm specweft -- capabilities --repo .
-pnpm specweft -- review --repo .
-pnpm specweft -- recall --repo . --keyword "login"
-pnpm specweft -- pool init
-pnpm specweft -- pool list mcp
-pnpm specweft -- pool list skills
-pnpm specweft -- apply mcp filesystem --repo .
-pnpm specweft -- apply skill diff-explainer --repo .
-pnpm specweft -- assembly --repo .
-pnpm specweft -- mcp --repo .
+pnpm specweft --help
+pnpm specweft init
+pnpm specweft recommend
+pnpm specweft capabilities
+pnpm specweft review
+pnpm specweft recall --keyword "login"
+pnpm specweft pool init
+pnpm specweft pool list mcp
+pnpm specweft pool list skills
+pnpm specweft apply mcp filesystem
+pnpm specweft apply skill diff-explainer
+pnpm specweft assembly
+pnpm specweft mcp
 pnpm specweft start
 ```
 

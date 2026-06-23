@@ -1,5 +1,6 @@
 import {
   createMemoryHandoff,
+  getActiveRequirement,
   resolveRepoPath,
   scanProject,
 } from "@specweft/core";
@@ -9,7 +10,8 @@ import { printJson } from "../output.js";
 export async function runHandoff(repoArg: string, keyword?: string): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
   const profile = await scanProject(repoPath);
-  const handoff = await createMemoryHandoff(repoPath, profile, keyword);
+  const requirement = keyword?.trim() ? undefined : await getActiveRequirement(repoPath);
+  const handoff = await createMemoryHandoff(repoPath, profile, keyword, 5, requirement);
 
   printJson(handoff);
 }

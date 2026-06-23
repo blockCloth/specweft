@@ -1,4 +1,4 @@
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   BootstrapSession,
@@ -7,16 +7,20 @@ import type {
   SpecWeftInitResult,
 } from "../schemas/types.js";
 import { createRuntimeAssembly } from "../assembly/runtime-assembly.js";
-import { createMemoryHandoff } from "../memory/session-memory.js";
+import { createMemoryDigest, createMemoryHandoff } from "../memory/session-memory.js";
+import { createRequirementDossier } from "../memory/requirement-dossier.js";
 import { initializeGlobalPools } from "../pool/pool-manager.js";
 import { recommendForProject } from "../recommendations/recommender.js";
 import { initializeProject, scanProject } from "../scanner/project-scanner.js";
 import { applyProjectMcp, applyProjectSkill } from "../selection/selection-manager.js";
 import { projectConfigDir } from "../utils/path.js";
 import { createCapabilityCenter } from "../capabilities/capability-center.js";
+import { getActiveRequirement } from "../requirements/requirement-manager.js";
 
 const DEFAULT_MCP_IDS = ["filesystem", "git"];
 const DEFAULT_SKILL_IDS = ["diff-explainer", "test-planner"];
+const INSTRUCTION_START_MARKER = "<!-- SPECWEFT:START -->";
+const INSTRUCTION_END_MARKER = "<!-- SPECWEFT:END -->";
 
 export async function createBootstrapSession(
   repoPath: string,
@@ -24,11 +28,14 @@ export async function createBootstrapSession(
   memoryLimit = 5,
 ): Promise<BootstrapSession> {
   const profile = await scanProject(repoPath);
-  const [recommendations, capabilityCenter, assembly, handoff] = await Promise.all([
+  const requirement = await getActiveRequirement(repoPath);
+  const [recommendations, capabilityCenter, assembly, handoff, memoryDigest, requirementDossier] = await Promise.all([
     recommendForProject(profile, repoPath),
     createCapabilityCenter(profile, repoPath),
     createRuntimeAssembly(repoPath),
-    createMemoryHandoff(repoPath, profile, keyword, memoryLimit),
+    createMemoryHandoff(repoPath, profile, keyword, memoryLimit, requirement),
+    createMemoryDigest(repoPath, profile),
+    createRequirementDossier(repoPath, profile, { sessionPreviewLimit: 2 }),
   ]);
 
   return {
@@ -40,6 +47,8 @@ export async function createBootstrapSession(
     capabilityCenter,
     assembly,
     handoff,
+    memoryDigest,
+    requirementDossier,
     workflow: createAgentWorkflow(),
   };
 }
@@ -74,7 +83,21 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
       when: "At the beginning of a coding session",
       actions: [
         "Call specweft.bootstrap_session once before planning code changes.",
-        "Use the returned profile, runtime assembly, recommendations, and handoff summary as local project context.",
+        "Call specweft.get_memory_digest to see requirement-grouped long-term memory without filling the full context.",
+        "Call specweft.get_requirement_dossier when you need a human-readable map of repeated reviews by requirement.",
+        "Call specweft.get_memory_index only when you need recent raw memory entries.",
+        "Use the returned profile, runtime assembly, recommendations, digest, and dossier as local project context.",
+      ],
+    },
+    {
+      when: "Before planning a user coding request",
+      actions: [
+        "Call specweft.prepare_task with the user's request before editing code.",
+        "If prepare_task returns missingQuestions, ask the user unless the answer is obvious from the repository.",
+        "If prepare_task returns relevant memorySuggestions, call specweft.restore_requirement for the best match before editing.",
+        "Call specweft.start_work_segment before editing so mixed diffs can be separated by request boundary.",
+        "If the task continues a known requirement, pass that requirementId when recording the final diff.",
+        "Use specweft.recommend_skills_for_task to pick task-specific Skills instead of enabling unrelated tools.",
       ],
     },
     {
@@ -87,14 +110,16 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
     {
       when: "After changing code",
       actions: [
-        "Call specweft.review_current_diff to explain the change for the user.",
-        "Call specweft.save_session_memory with a short title, summary, keywords, and changed files.",
+        "Call specweft.record_current_diff with a short title to persist the review report and memory.",
+        "record_current_diff automatically closes the active work segment; call specweft.get_work_segment_status if the diff mixes several requests.",
+        "Call specweft.get_recording_status again; if it is unrecorded or changed-after-record, call specweft.record_current_diff before handing back.",
+        "If you only need a temporary explanation without saving, call specweft.review_current_diff.",
       ],
     },
     {
       when: "When the user asks to continue old work",
       actions: [
-        "Call specweft.create_memory_handoff with the user's keyword if they mention one.",
+        "Call specweft.get_memory_digest and specweft.get_requirement_dossier first, then specweft.restore_requirement with the user's keyword or the matched requirement id.",
         "Explain which recovered memory matters before editing new code.",
       ],
     },
@@ -129,23 +154,19 @@ async function writeAgentInstructions(
   await writeFile(configInstructionPath, instruction, "utf-8");
 
   const agentFilePath = path.join(repoPath, "AGENTS.md");
-  if (await shouldAppendInstruction(agentFilePath)) {
-    await appendFile(agentFilePath, `\n\n${instruction}`, "utf-8");
-    writtenPaths.push(agentFilePath);
-  }
+  await upsertInstructionBlock(agentFilePath, instruction);
+  writtenPaths.push(agentFilePath);
 
   const claudeFilePath = path.join(repoPath, "CLAUDE.md");
-  if (await shouldAppendInstruction(claudeFilePath)) {
-    await appendFile(claudeFilePath, `\n\n${instruction}`, "utf-8");
-    writtenPaths.push(claudeFilePath);
-  }
+  await upsertInstructionBlock(claudeFilePath, instruction);
+  writtenPaths.push(claudeFilePath);
 
   return writtenPaths;
 }
 
 function createAgentInstructionBlock(profile: ProjectProfile): string {
   return [
-    "<!-- SPECWEFT:START -->",
+    INSTRUCTION_START_MARKER,
     "# SpecWeft Agent Instructions",
     "",
     `Project: ${profile.name}`,
@@ -153,20 +174,44 @@ function createAgentInstructionBlock(profile: ProjectProfile): string {
     "When this project is opened in Codex, Claude, or another MCP-compatible coding agent:",
     "",
     "1. At the beginning of a coding session, call `specweft.bootstrap_session` once.",
-    "2. Use the returned project profile, enabled MCP/Skill assembly, recommendations, and memory handoff before planning edits.",
-    "3. If the user asks to continue earlier work, call `specweft.create_memory_handoff` with the user's keyword.",
-    "4. After changing code, call `specweft.review_current_diff` and then `specweft.save_session_memory`.",
-    "5. Do not install marketplace MCPs or Skills automatically when they require credentials, network access, database access, or conflict with local rules.",
+    "2. Read `specweft.get_memory_digest` and `specweft.get_requirement_dossier` as the long-term memory entry points. Restore only the relevant requirement, never the entire history.",
+    "3. Before planning or editing a user request, call `specweft.prepare_task` with the user's natural language task.",
+    "4. If `prepare_task` returns `missingQuestions`, ask the user unless the answer is obvious from the repository.",
+    "5. If `prepare_task` returns relevant memories, call `specweft.restore_requirement` for the best match instead of loading every memory.",
+    "6. Before editing, call `specweft.start_work_segment` with the current task, so mixed uncommitted diffs can be separated by request boundary.",
+    "7. Use `specweft.recommend_skills_for_task` for task-specific Skill routing. Treat MCP recommendations as optional, not required.",
+    "8. Call `specweft.get_recording_status` before and after edits; never finish with an unrecorded or changed-after-record diff.",
+    "9. After changing code, call `specweft.record_current_diff` with a short title and requirementId when available, so the review, work segment, and memory stay bound to the correct requirement line.",
+    "10. Do not install marketplace MCPs or Skills automatically when they require credentials, network access, database access, or conflict with local rules.",
     "",
-    "<!-- SPECWEFT:END -->",
+    INSTRUCTION_END_MARKER,
   ].join("\n");
 }
 
-async function shouldAppendInstruction(filePath: string): Promise<boolean> {
+async function upsertInstructionBlock(filePath: string, instruction: string): Promise<void> {
   try {
     const content = await readFile(filePath, "utf-8");
-    return !content.includes("<!-- SPECWEFT:START -->");
+    const nextContent = replaceManagedInstructionBlock(content, instruction);
+    await writeFile(filePath, nextContent, "utf-8");
   } catch {
-    return true;
+    await writeFile(filePath, `${instruction}\n`, "utf-8");
   }
+}
+
+function replaceManagedInstructionBlock(content: string, instruction: string): string {
+  const start = content.indexOf(INSTRUCTION_START_MARKER);
+  const end = content.indexOf(INSTRUCTION_END_MARKER);
+
+  if (start >= 0 && end >= start) {
+    const before = content.slice(0, start).trimEnd();
+    const after = content.slice(end + INSTRUCTION_END_MARKER.length).trimStart();
+
+    return [
+      before,
+      instruction,
+      after,
+    ].filter(Boolean).join("\n\n").concat("\n");
+  }
+
+  return `${content.trimEnd()}\n\n${instruction}\n`;
 }

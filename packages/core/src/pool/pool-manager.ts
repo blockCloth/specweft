@@ -1,14 +1,16 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   MarketplaceMcpCandidate,
   MarketplaceMcpInstallResult,
   MarketplaceSkill,
   MarketplaceSkillInstallResult,
+  MarketplaceSkillPreview,
   McpManifest,
   McpRegistryItem,
   PoolInitResult,
   RegistryFile,
+  SkillDetail,
   SkillRegistryItem,
 } from "../schemas/types.js";
 import {
@@ -81,6 +83,21 @@ export async function listSkillPool(): Promise<RegistryFile<SkillRegistryItem>> 
       items: [],
     }
   );
+}
+
+// 读取 Skill 本体内容，用于 Web UI 展示详情，避免用户在看不到 SKILL.md 时盲目启用。
+export async function readSkillDetail(skillId: string): Promise<SkillDetail | undefined> {
+  const registry = await listSkillPool();
+  const item = registry.items.find((entry) => entry.id === skillId);
+
+  if (!item) {
+    return undefined;
+  }
+
+  return {
+    item,
+    content: await readFile(item.skillPath, "utf-8"),
+  };
 }
 
 // 读取单个 MCP manifest，后续 runtime assembly 会用它生成 Codex/Claude 配置。
@@ -161,6 +178,17 @@ export async function installMarketplaceSkill(
     item,
     skillPath,
     installedAt: now,
+    contentSource: createMarketplaceSkillRawUrl(skill),
+  };
+}
+
+// 按用户动作预览市场 Skill 内容；只读取远程 SKILL.md，不写入全局池，也不启用到项目。
+export async function previewMarketplaceSkill(
+  skill: MarketplaceSkill,
+): Promise<MarketplaceSkillPreview> {
+  return {
+    skill,
+    content: await fetchMarketplaceSkillContent(skill),
     contentSource: createMarketplaceSkillRawUrl(skill),
   };
 }

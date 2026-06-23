@@ -1,5 +1,9 @@
 # SpecWeft 产品与技术规划
 
+> 当前状态：这份文档是早期完整规划稿，保留用于追溯产品思考，不再作为唯一当前实现准则。
+> v0.1 的主线已经调整为：任务准备、Skill 路由、记忆摘要/按需恢复、代码修改讲解和 Codex/Claude MCP 接入。
+> MCP 市场仍保留为高级可选能力，不再作为新手默认主流程。桌面版和编辑器插件形态暂不实现。
+
 ## 1. 产品定位
 
 SpecWeft 是 Codex、Claude Code、Cursor 等 AI Coding Agent 的本地伴侣层。
@@ -110,8 +114,8 @@ SpecWeft 提供：
 第一版做 npm 工具：
 
 ```bash
-npx specweft init
-npx specweft start
+specweft init
+specweft start
 ```
 
 提供：
@@ -120,12 +124,14 @@ npx specweft start
 CLI + Local Web UI + MCP Server
 ```
 
-后期再扩展：
+后续扩展优先考虑：
 
-- 桌面版
-- VS Code 插件
 - GitHub PR 集成
 - 团队空间
+- 共享 Skill 规则包
+- 需求记忆的导入/导出
+
+桌面版和编辑器插件形态暂不进入当前路线，避免产品主线偏离“CLI + Local Web UI + MCP Server”。
 
 ## 5. Pool 与装配设计
 
@@ -646,7 +652,8 @@ specweft pool list mcp
 specweft pool list skills
 specweft apply mcp filesystem
 specweft apply skill diff-explainer
-specweft assembly --task "fix login bug"
+specweft prepare --task "fix login bug"
+specweft assembly --repo .
 ```
 
 第三阶段：

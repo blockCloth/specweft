@@ -24,5 +24,5 @@ export async function runPool(subcommand?: string, target?: string): Promise<voi
     return;
   }
 
-  throw new Error("pool usage: specweft pool init | pool list mcp | pool list skills");
+  throw new Error("pool 用法：specweft pool init | specweft pool list mcp | specweft pool list skills");
 }

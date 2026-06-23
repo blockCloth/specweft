@@ -5,42 +5,100 @@ import {
   applyProjectSkill,
   createBootstrapSession,
   createCapabilityCenter,
+  createMemoryDigest,
+  createMemoryTimeline,
+  createRequirementDossier,
   createReviewDraft,
+  createReviewReport,
   createMemoryHandoff,
   createRuntimeAssembly,
+  getActiveRequirement,
+  getRecordingStatus,
   installMarketplaceMcp,
   installMarketplaceSkill,
+  createMemoryIndex,
+  createWorkSegmentStatus,
+  getActiveWorkSegment,
+  listRequirements,
+  prepareTask,
   recommendForProject,
+  recommendSkillsForTask,
   recommendMarketplaceMcps,
   recommendMarketplaceSkills,
   recallSessions,
   resolveRepoPath,
   saveSessionMemory,
   scanProject,
+  startWorkSegment,
+  completeWorkSegment,
+  restoreRequirementMemory,
 } from "@specweft/core";
+import type { DiffSummary, RequirementRecord } from "@specweft/core";
 import { z } from "zod";
 
 const RepoInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
 };
 
+const PrepareTaskInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  task: z.string().describe("The user's natural language coding request."),
+};
+
+const RestoreRequirementInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  keyword: z.string().optional().describe("Optional keyword used to restore a requirement memory."),
+  requirementId: z.string().optional().describe("Optional requirement id to restore."),
+  limit: z.number().int().min(1).max(10).optional().describe("Maximum sessions included in the restored handoff."),
+};
+
 const RecallInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
   keyword: z.string().describe("Keyword used to search recent SpecWeft session memories."),
+  requirementId: z.string().optional().describe("Optional requirement id used to narrow memory recall."),
+};
+
+const DossierInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  includeSessions: z.boolean().optional().describe("Include full session details. Defaults to false to keep context compact."),
+  sessionPreviewLimit: z.number().int().min(0).max(10).optional().describe("Number of recent sessions to include per requirement when includeSessions is false."),
 };
 
 const HandoffInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
   keyword: z.string().optional().describe("Optional keyword used to recover a specific recent requirement thread."),
+  requirementId: z.string().optional().describe("Optional requirement id used to narrow the handoff."),
   limit: z.number().int().min(1).max(10).optional().describe("Maximum memory sessions included in the handoff prompt."),
 };
 
 const SaveMemoryInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
   title: z.string().describe("Short title for this coding session or requirement."),
+  requirementId: z.string().optional().describe("Optional requirement id this memory belongs to."),
   summary: z.string().describe("Human-readable summary of what changed and why."),
   keywords: z.array(z.string()).optional().describe("Search keywords for future recall."),
   changedFiles: z.array(z.string()).optional().describe("Files touched by this session."),
+};
+
+const RecordCurrentDiffInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  title: z.string().optional().describe("Short title for the generated review and memory."),
+  requirementId: z.string().optional().describe("Optional requirement id this review belongs to."),
+};
+
+const StartWorkSegmentInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  task: z.string().describe("The current user request or coding task that is about to be edited."),
+  title: z.string().optional().describe("Optional short title for this work segment."),
+  requirementId: z.string().optional().describe("Optional requirement id this work segment belongs to."),
+};
+
+const CompleteWorkSegmentInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  segmentId: z.string().optional().describe("Optional work segment id. Defaults to the active segment."),
+  status: z.enum(["recorded", "interrupted", "abandoned"]).optional().describe("Completion status. Defaults to recorded."),
+  title: z.string().optional().describe("Optional final title."),
+  summary: z.string().optional().describe("Optional final summary."),
 };
 
 const ApplyInput = {
@@ -120,6 +178,83 @@ const MarketplaceSkillInput = {
 
 export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string): void {
   server.registerTool(
+    "specweft.prepare_task",
+    {
+      title: "Prepare task context",
+      description: "Use before planning or editing code. Clarifies the request, points to likely files, recommends Skills, and returns matching memory without filling the whole context.",
+      inputSchema: PrepareTaskInput,
+    },
+    async ({ repoPath, task }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await prepareTask(resolvedRepoPath, task));
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_memory_index",
+    {
+      title: "Get memory index",
+      description: "Return the lightweight SpecWeft memory index. Use this as a table of contents before restoring full requirement memory.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      return jsonToolResult(await createMemoryIndex(resolvedRepoPath, profile));
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_memory_digest",
+    {
+      title: "Get memory digest",
+      description: "Return requirement-grouped memory summaries. Use this as the first long-term memory entry point, then restore only the relevant requirement.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      return jsonToolResult(await createMemoryDigest(resolvedRepoPath, profile));
+    },
+  );
+
+  server.registerTool(
+    "specweft.restore_requirement",
+    {
+      title: "Restore requirement memory",
+      description: "Restore the full memory handoff for a requirement or keyword after specweft.prepare_task or specweft.get_memory_index indicates it is relevant.",
+      inputSchema: RestoreRequirementInput,
+    },
+    async ({ repoPath, keyword, requirementId, limit }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      const requirement = requirementId?.trim()
+        ? await resolveToolRequirement(resolvedRepoPath, requirementId)
+        : undefined;
+      return jsonToolResult(await restoreRequirementMemory(resolvedRepoPath, profile, {
+        keyword,
+        requirement,
+        limit,
+      }));
+    },
+  );
+
+  server.registerTool(
+    "specweft.recommend_skills_for_task",
+    {
+      title: "Recommend Skills for task",
+      description: "Recommend enabled or available Skills for the current natural language task. Prefer this over generic project-level tool recommendations while planning edits.",
+      inputSchema: PrepareTaskInput,
+    },
+    async ({ repoPath, task }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      const skillSuggestions = await recommendSkillsForTask(profile, resolvedRepoPath, task);
+      return jsonToolResult({ profile, skillSuggestions });
+    },
+  );
+
+  server.registerTool(
     "specweft.bootstrap_session",
     {
       title: "Bootstrap SpecWeft session",
@@ -192,6 +327,106 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
   );
 
   server.registerTool(
+    "specweft.get_recording_status",
+    {
+      title: "Get recording status",
+      description: "Return whether the current git diff has already been recorded as a SpecWeft review/memory.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await getRecordingStatus(resolvedRepoPath));
+    },
+  );
+
+  server.registerTool(
+    "specweft.start_work_segment",
+    {
+      title: "Start work segment",
+      description: "Call before editing a user request. It records a lightweight git boundary so later review can separate this task from older uncommitted changes.",
+      inputSchema: StartWorkSegmentInput,
+    },
+    async ({ repoPath, task, title, requirementId }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      const requirement = requirementId?.trim()
+        ? await resolveToolRequirement(resolvedRepoPath, requirementId)
+        : await getActiveRequirement(resolvedRepoPath);
+      return jsonToolResult(await startWorkSegment(resolvedRepoPath, {
+        projectId: profile.id,
+        task,
+        title,
+        requirement,
+      }));
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_work_segment_status",
+    {
+      title: "Get work segment status",
+      description: "Return active and recent SpecWeft work segments. Use this when several requirements may be mixed in one uncommitted diff.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      return jsonToolResult(await createWorkSegmentStatus(resolvedRepoPath, profile));
+    },
+  );
+
+  server.registerTool(
+    "specweft.complete_work_segment",
+    {
+      title: "Complete work segment",
+      description: "Finish the active lightweight work segment without creating a review. Usually specweft.record_current_diff does this automatically.",
+      inputSchema: CompleteWorkSegmentInput,
+    },
+    async ({ repoPath, segmentId, status, title, summary }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult({
+        segment: await completeWorkSegment(resolvedRepoPath, {
+          segmentId,
+          status,
+          title,
+          summary,
+        }),
+      });
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_memory_timeline",
+    {
+      title: "Get memory timeline",
+      description: "Return requirement-scoped SpecWeft memories grouped into a timeline with current/stale/reverted status counts.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      return jsonToolResult(await createMemoryTimeline(resolvedRepoPath, profile));
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_requirement_dossier",
+    {
+      title: "Get requirement dossier",
+      description: "Return compact requirement dossiers that group repeated reviews, key files, code status, and restore hints. Use includeSessions only when full history is needed.",
+      inputSchema: DossierInput,
+    },
+    async ({ repoPath, includeSessions, sessionPreviewLimit }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      return jsonToolResult(await createRequirementDossier(resolvedRepoPath, profile, {
+        includeSessions,
+        sessionPreviewLimit: includeSessions ? undefined : sessionPreviewLimit,
+      }));
+    },
+  );
+
+  server.registerTool(
     "specweft.review_current_diff",
     {
       title: "Review current diff",
@@ -201,8 +436,45 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
     async ({ repoPath }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const diff = await analyzeCurrentDiff(resolvedRepoPath);
-      const review = createReviewDraft(diff);
-      return jsonToolResult({ diff, review });
+      const profile = await scanProject(resolvedRepoPath);
+      const [requirements, memoryDigest, activeWorkSegment] = await Promise.all([
+        listRequirements(resolvedRepoPath),
+        createMemoryDigest(resolvedRepoPath, profile),
+        getActiveWorkSegment(resolvedRepoPath),
+      ]);
+      const review = createReviewDraft(diff, {
+        requirements: requirements.requirements,
+        activeRequirementId: requirements.activeRequirementId,
+        memoryDigest,
+        activeWorkSegment,
+      });
+      return jsonToolResult({
+        diff: createCompactDiffSummary(diff),
+        activeWorkSegment,
+        review,
+        note: "Full patch text is intentionally omitted from MCP output. Use the sourceReadingGuide paths or git diff locally when exact hunks are needed.",
+      });
+    },
+  );
+
+  server.registerTool(
+    "specweft.record_current_diff",
+    {
+      title: "Record current diff",
+      description: "Create a persistent SpecWeft review report and memory for the current git diff. Use this after Codex or Claude changes code.",
+      inputSchema: RecordCurrentDiffInput,
+    },
+    async ({ repoPath, title, requirementId }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const profile = await scanProject(resolvedRepoPath);
+      const report = await createReviewReport(resolvedRepoPath, profile, title, 7, requirementId);
+      return jsonToolResult({
+        title: report.title,
+        reportPath: report.reportPath,
+        memory: report.memory,
+        requirement: report.requirement,
+        review: report.review,
+      });
     },
   );
 
@@ -213,11 +485,14 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       description: "Save a concise coding session memory for cross-thread recall.",
       inputSchema: SaveMemoryInput,
     },
-    async ({ repoPath, title, summary, keywords, changedFiles }) => {
+    async ({ repoPath, title, requirementId, summary, keywords, changedFiles }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
+      const requirement = await resolveToolRequirement(resolvedRepoPath, requirementId);
       const memory = await saveSessionMemory(resolvedRepoPath, {
         projectId: profile.id,
+        requirementId: requirement?.id,
+        requirementTitle: requirement?.title,
         title,
         summary,
         keywords: keywords ?? [],
@@ -235,10 +510,13 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       description: "Search recent SpecWeft session memories by keyword.",
       inputSchema: RecallInput,
     },
-    async ({ repoPath, keyword }) => {
+    async ({ repoPath, keyword, requirementId }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const requirement = await resolveToolRequirement(resolvedRepoPath, requirementId);
       const sessions = await recallSessions(
-        resolveToolRepoPath(defaultRepoPath, repoPath),
+        resolvedRepoPath,
         keyword,
+        requirement?.id,
       );
       return jsonToolResult({ sessions });
     },
@@ -251,10 +529,15 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       description: "Create a cross-thread handoff prompt from recent SpecWeft memories so a new Codex or Claude thread can continue with context.",
       inputSchema: HandoffInput,
     },
-    async ({ repoPath, keyword, limit }) => {
+    async ({ repoPath, keyword, requirementId, limit }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
-      const handoff = await createMemoryHandoff(resolvedRepoPath, profile, keyword, limit);
+      const requirement = requirementId?.trim()
+        ? await resolveToolRequirement(resolvedRepoPath, requirementId)
+        : keyword?.trim()
+          ? undefined
+          : await getActiveRequirement(resolvedRepoPath);
+      const handoff = await createMemoryHandoff(resolvedRepoPath, profile, keyword, limit, requirement);
       return jsonToolResult({ handoff });
     },
   );
@@ -369,6 +652,23 @@ function resolveToolRepoPath(defaultRepoPath: string, repoPath?: string): string
   return repoPath ? resolveRepoPath(repoPath) : defaultRepoPath;
 }
 
+async function resolveToolRequirement(
+  repoPath: string,
+  requirementId?: string,
+): Promise<RequirementRecord | undefined> {
+  if (!requirementId?.trim()) {
+    return getActiveRequirement(repoPath);
+  }
+
+  const file = await listRequirements(repoPath);
+  const requirement = file.requirements.find((item) => item.id === requirementId.trim());
+  if (!requirement) {
+    throw new Error(`Requirement not found: ${requirementId}`);
+  }
+
+  return requirement;
+}
+
 function jsonToolResult(value: unknown) {
   return {
     content: [
@@ -377,5 +677,16 @@ function jsonToolResult(value: unknown) {
         text: JSON.stringify(value, null, 2),
       },
     ],
+  };
+}
+
+function createCompactDiffSummary(diff: DiffSummary): Omit<DiffSummary, "diffText"> & {
+  diffTextOmitted: true;
+} {
+  const { diffText: _diffText, ...compactDiff } = diff;
+
+  return {
+    ...compactDiff,
+    diffTextOmitted: true,
   };
 }

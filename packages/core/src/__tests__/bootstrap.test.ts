@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -23,7 +23,56 @@ test("initializes project for agent bootstrap workflow", async () => {
     assert.deepEqual(result.enabled.skills.map((item) => item.id), ["diff-explainer", "test-planner"]);
     assert.ok(result.instructionPaths.some((filePath) => filePath.endsWith(".specweft/agent-instructions.md")));
     assert.match(instruction, /specweft\.bootstrap_session/);
+    assert.match(instruction, /specweft\.get_memory_digest/);
+    assert.match(instruction, /specweft\.get_requirement_dossier/);
+    assert.match(instruction, /specweft\.prepare_task/);
+    assert.match(instruction, /specweft\.restore_requirement/);
+    assert.match(instruction, /specweft\.start_work_segment/);
+    assert.match(instruction, /specweft\.record_current_diff/);
     assert.match(claudeInstruction, /specweft\.bootstrap_session/);
+    assert.match(claudeInstruction, /specweft\.get_memory_digest/);
+    assert.match(claudeInstruction, /specweft\.get_requirement_dossier/);
+    assert.match(claudeInstruction, /specweft\.prepare_task/);
+    assert.match(claudeInstruction, /specweft\.start_work_segment/);
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("updates existing SpecWeft instruction blocks during init", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "specweft-bootstrap-home-"));
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-bootstrap-repo-"));
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await writeFile(
+      path.join(repoPath, "AGENTS.md"),
+      [
+        "# Existing Agent Notes",
+        "",
+        "Keep this user-owned paragraph.",
+        "",
+        "<!-- SPECWEFT:START -->",
+        "# Old SpecWeft Block",
+        "",
+        "Call `specweft.prepare_task` only.",
+        "<!-- SPECWEFT:END -->",
+        "",
+        "Keep this footer.",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await initializeSpecWeftProject(repoPath);
+
+    const instruction = await readFile(path.join(repoPath, "AGENTS.md"), "utf-8");
+    assert.match(instruction, /Keep this user-owned paragraph/);
+    assert.match(instruction, /Keep this footer/);
+    assert.doesNotMatch(instruction, /Old SpecWeft Block/);
+    assert.match(instruction, /specweft\.start_work_segment/);
+    assert.match(instruction, /specweft\.record_current_diff/);
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });
@@ -44,7 +93,14 @@ test("creates bootstrap session with profile, assembly, recommendations, and wor
     assert.ok(bootstrap.recommendations.length >= 4);
     assert.ok(Object.keys(bootstrap.assembly.mcpServers).includes("filesystem"));
     assert.ok(bootstrap.assembly.skills.some((skill) => skill.id === "diff-explainer"));
-    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("review_current_diff")));
+    assert.equal(bootstrap.memoryDigest.totalMemories, 0);
+    assert.equal(bootstrap.requirementDossier.totalSessions, 0);
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("prepare_task")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_memory_digest")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_requirement_dossier")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("restore_requirement")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("record_current_diff")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_recording_status")));
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });

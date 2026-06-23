@@ -1,47 +1,54 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { resolveRepoPath } from "@specweft/core";
-import { printJson } from "../output.js";
+import { resolveRepoPath, scanProject } from "@specweft/core";
+import {
+  createAgentWorkflowText,
+  createCodexTomlSnippet,
+  createSpecWeftMcpClientConfig,
+  SPECWEFT_MCP_TOOL_NAMES,
+} from "../mcp/config.js";
+import { printJson, printText } from "../output.js";
 
-const MCP_TOOL_NAMES = [
-  "specweft.bootstrap_session",
-  "specweft.get_project_profile",
-  "specweft.recommend_project_tools",
-  "specweft.get_capability_center",
-  "specweft.get_runtime_assembly",
-  "specweft.review_current_diff",
-  "specweft.save_session_memory",
-  "specweft.recall_sessions",
-  "specweft.create_memory_handoff",
-  "specweft.recommend_marketplace_mcps",
-  "specweft.install_marketplace_mcp",
-  "specweft.recommend_marketplace_skills",
-  "specweft.install_marketplace_skill",
-  "specweft.apply_project_mcp",
-  "specweft.apply_project_skill",
-];
-
-export async function runMcpInspect(repoArg: string): Promise<void> {
+export async function runMcpInspect(repoArg: string, json = false): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
-  const cliEntryPath = resolveCliEntryPath();
-
-  printJson({
+  const clientConfig = createSpecWeftMcpClientConfig(repoPath);
+  const codexToml = createCodexTomlSnippet(repoPath);
+  const claudeJson = JSON.stringify(clientConfig, null, 2);
+  const inspect = {
     server: "specweft",
     transport: "stdio",
-    tools: MCP_TOOL_NAMES,
-    clientConfig: {
-      mcpServers: {
-        specweft: {
-          command: "node",
-          args: [cliEntryPath, "mcp", "--repo", repoPath],
-        },
-      },
-    },
-  });
-}
+    tools: SPECWEFT_MCP_TOOL_NAMES,
+    clientConfig,
+    codexToml,
+    claudeJson,
+    workflow: createAgentWorkflowText(),
+  };
 
-function resolveCliEntryPath(): string {
-  // dist/commands/mcp-inspect.js -> dist/index.js
-  const currentFile = fileURLToPath(import.meta.url);
-  return path.resolve(path.dirname(currentFile), "..", "index.js");
+  if (json) {
+    printJson(inspect);
+    return;
+  }
+
+  const profile = await scanProject(repoPath);
+
+  printText([
+    "SpecWeft MCP Inspect",
+    "",
+    `项目: ${profile.name}`,
+    `路径: ${repoPath}`,
+    `服务: ${inspect.server}`,
+    `传输: ${inspect.transport}`,
+    `工具数: ${inspect.tools.length}`,
+    "",
+    "Codex MCP 配置:",
+    codexToml,
+    "",
+    "Claude MCP 配置:",
+    claudeJson,
+    "",
+    "暴露的 MCP 工具:",
+    ...inspect.tools.map((tool) => `- ${tool}`),
+    "",
+    createAgentWorkflowText(),
+    "",
+    "需要机器可读输出时运行: specweft mcp-inspect --json",
+  ].join("\n"));
 }

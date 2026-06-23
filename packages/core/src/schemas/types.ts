@@ -93,6 +93,12 @@ export type MarketplaceSkillInstallResult = {
   contentSource: string;
 };
 
+export type MarketplaceSkillPreview = {
+  skill: MarketplaceSkill;
+  content: string;
+  contentSource: string;
+};
+
 export type MarketplaceMcp = {
   id: string;
   name: string;
@@ -145,6 +151,7 @@ export type DiffSummary = {
   repoPath: string;
   changedFiles: DiffFileChange[];
   diffText: string;
+  snapshot: GitChangeSnapshot;
   stats: {
     files: number;
     additions: number;
@@ -152,10 +159,119 @@ export type DiffSummary = {
   };
 };
 
+export type CodeSnapshotStatus = "current" | "stale" | "reverted" | "unknown";
+
+export type GitChangeSnapshot = {
+  head: string;
+  diffHash: string;
+  changedFiles: string[];
+  hasChanges: boolean;
+  capturedAt: string;
+};
+
+export type CodeSnapshotState = {
+  status: CodeSnapshotStatus;
+  reason: string;
+  checkedAt: string;
+  currentSnapshot?: GitChangeSnapshot;
+};
+
+export type RecordingStatus = {
+  hasChanges: boolean;
+  isRecorded: boolean;
+  status: "clean" | "recorded" | "unrecorded" | "changed-after-record";
+  reason: string;
+  currentSnapshot: GitChangeSnapshot;
+  latestMatchingMemory?: SessionMemory;
+  latestMemory?: SessionMemory;
+};
+
+export type SourceReadingItem = {
+  path: string;
+  absolutePath: string;
+  reason: string;
+  command: string;
+};
+
+export type ReviewGenerationSource = "rules" | "llm" | "rules+llm";
+
+export type ReviewChangeGroup = {
+  id: string;
+  title: string;
+  purpose: string;
+  area: string;
+  matchReason: string;
+  confidence: "high" | "medium" | "low";
+  files: DiffFileChange[];
+  keyValues: Array<{
+    key: string;
+    value: string;
+  }>;
+  reviewNotes: string[];
+  testSuggestions: string[];
+};
+
+export type ReviewRequirementBlockKind = "current-work" | "historical-requirement" | "functional-area" | "carried-work";
+
+export type ReviewRequirementBlock = {
+  id: string;
+  title: string;
+  kind: ReviewRequirementBlockKind;
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  evidence: string[];
+  files: DiffFileChange[];
+  keyValues: Array<{
+    key: string;
+    value: string;
+  }>;
+  reviewFocus: string[];
+  testSuggestions: string[];
+  suggestedAction: string;
+};
+
+export type ReviewOverviewBatch = {
+  id: string;
+  title: string;
+  kind: ReviewRequirementBlockKind;
+  summary: string;
+  suggestedAction: string;
+  confidence: "high" | "medium" | "low";
+  files: DiffFileChange[];
+  keyValues: Array<{
+    key: string;
+    value: string;
+  }>;
+  sourceBlockIds: string[];
+  sourceGroupIds: string[];
+  sourceGroupTitles: string[];
+};
+
+export type ReviewOverview = {
+  title: string;
+  summary: string;
+  keyValues: Array<{
+    key: string;
+    value: string;
+  }>;
+  batches: ReviewOverviewBatch[];
+  readingOrder: string[];
+};
+
 export type ReviewDraft = {
   summary: string;
   intent: string;
+  generationSource?: ReviewGenerationSource;
+  llmSummary?: string;
+  llmReviewNotes?: string[];
+  llmModel?: string;
+  llmError?: string;
+  reviewOverview: ReviewOverview;
+  requirementBlocks: ReviewRequirementBlock[];
+  changeGroups: ReviewChangeGroup[];
+  implementationSummary: string[];
   mainChanges: string[];
+  sourceReadingGuide: SourceReadingItem[];
   reviewWalkthrough: string[];
   impactAreas: string[];
   overEngineeringSignals: string[];
@@ -172,15 +288,22 @@ export type ReviewReport = {
   html: string;
   review: ReviewDraft;
   memory: SessionMemory;
+  requirement?: RequirementRecord;
 };
 
 export type SessionMemory = {
   id: string;
   projectId: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  workSegmentId?: string;
   title: string;
   keywords: string[];
   summary: string;
   changedFiles: string[];
+  codeSnapshot?: GitChangeSnapshot;
+  codeStatus?: CodeSnapshotStatus;
+  codeStatusReason?: string;
   reviewPath?: string;
   nextThreadPrompt?: string;
   createdAt: string;
@@ -188,15 +311,325 @@ export type SessionMemory = {
   expiresAt: string;
 };
 
+export type RequirementStatus = "active" | "paused" | "done";
+
+export type RequirementRecord = {
+  id: string;
+  projectId: string;
+  title: string;
+  keywords: string[];
+  summary?: string;
+  status: RequirementStatus;
+  reviewCount: number;
+  lastReviewPath?: string;
+  lastMemoryId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RequirementFile = {
+  version: number;
+  activeRequirementId?: string;
+  requirements: RequirementRecord[];
+};
+
+export type WorkSegmentStatus = "active" | "recorded" | "interrupted" | "abandoned";
+
+export type WorkSegment = {
+  id: string;
+  projectId: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  title: string;
+  task: string;
+  status: WorkSegmentStatus;
+  startSnapshot: GitChangeSnapshot;
+  endSnapshot?: GitChangeSnapshot;
+  baselineChangedFiles: string[];
+  currentChangedFiles: string[];
+  newChangedFiles: string[];
+  carriedChangedFiles: string[];
+  reviewPath?: string;
+  memoryId?: string;
+  summary?: string;
+  createdAt: string;
+  updatedAt: string;
+  endedAt?: string;
+};
+
+export type WorkSegmentFile = {
+  version: number;
+  activeSegmentId?: string;
+  segments: WorkSegment[];
+};
+
+export type WorkSegmentInput = {
+  projectId: string;
+  title?: string;
+  task: string;
+  requirement?: RequirementRecord;
+};
+
+export type WorkSegmentCompletionInput = {
+  segmentId?: string;
+  status?: Exclude<WorkSegmentStatus, "active">;
+  title?: string;
+  summary?: string;
+  reviewPath?: string;
+  memoryId?: string;
+  requirement?: RequirementRecord;
+};
+
+export type WorkSegmentStatusReport = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  activeSegment?: WorkSegment;
+  recentSegments: WorkSegment[];
+  summary: {
+    total: number;
+    active: number;
+    recorded: number;
+    interrupted: number;
+    abandoned: number;
+  };
+  guidance: string[];
+};
+
+export type RequirementTimelineItem = {
+  requirement: RequirementRecord;
+  sessions: SessionMemory[];
+  statusCounts: Record<CodeSnapshotStatus, number>;
+  latestSession?: SessionMemory;
+};
+
+export type MemoryTimeline = {
+  projectId: string;
+  generatedAt: string;
+  activeRequirementId?: string;
+  items: RequirementTimelineItem[];
+  unscopedSessions: SessionMemory[];
+  summary: {
+    requirements: number;
+    sessions: number;
+    current: number;
+    stale: number;
+    reverted: number;
+    unknown: number;
+  };
+};
+
+export type RequirementDossierSession = {
+  id: string;
+  title: string;
+  summary: string;
+  keywords: string[];
+  changedFiles: string[];
+  reviewPath?: string;
+  codeStatus?: CodeSnapshotStatus;
+  codeStatusReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+};
+
+export type RequirementDossierItem = {
+  id: string;
+  requirementId?: string;
+  title: string;
+  status: RequirementStatus | "unscoped";
+  active: boolean;
+  summary: string;
+  latestSummary?: string;
+  reviewCount: number;
+  sessionCount: number;
+  sessionsOmitted: number;
+  keywords: string[];
+  keyFiles: string[];
+  statusCounts: Record<CodeSnapshotStatus, number>;
+  latestUpdatedAt?: string;
+  restoreHint: string;
+  nextAction: string;
+  sessions: RequirementDossierSession[];
+};
+
+export type RequirementDossier = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  activeRequirementId?: string;
+  totalRequirements: number;
+  totalSessions: number;
+  items: RequirementDossierItem[];
+  summary: string;
+};
+
+export type RequirementInput = {
+  projectId: string;
+  title: string;
+  keywords?: string[];
+  summary?: string;
+};
+
+export type RequirementReviewLink = {
+  reviewPath: string;
+  memoryId: string;
+  summary: string;
+  keywords: string[];
+};
+
 export type MemoryHandoff = {
   projectId: string;
   projectName: string;
+  requirementId?: string;
+  requirementTitle?: string;
   generatedAt: string;
   sessions: SessionMemory[];
   keywords: string[];
   changedFiles: string[];
+  codeStatusSummary: string[];
   summary: string;
   prompt: string;
+};
+
+export type MemoryIndexItem = {
+  id: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  title: string;
+  keywords: string[];
+  summary: string;
+  changedFiles: string[];
+  codeStatus?: CodeSnapshotStatus;
+  codeStatusReason?: string;
+  reviewPath?: string;
+  updatedAt: string;
+  expiresAt: string;
+  restoreHint: string;
+};
+
+export type MemoryIndex = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  totalMemories: number;
+  items: MemoryIndexItem[];
+  summary: string;
+};
+
+export type MemoryDigestItem = {
+  id: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  title: string;
+  latestSummary: string;
+  keywords: string[];
+  keyFiles: string[];
+  sessionCount: number;
+  statusCounts: Record<CodeSnapshotStatus, number>;
+  latestUpdatedAt: string;
+  restoreHint: string;
+};
+
+export type MemoryDigest = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  totalMemories: number;
+  totalThreads: number;
+  items: MemoryDigestItem[];
+  summary: string;
+};
+
+export type RequirementRestore = {
+  requirement?: RequirementRecord;
+  sessions: SessionMemory[];
+  handoff: MemoryHandoff;
+  summary: string;
+};
+
+export type TaskCodePointer = {
+  path: string;
+  reason: string;
+  confidence: "low" | "medium" | "high";
+  matchSource?: "path" | "content" | "path+content" | "memory";
+  fileRole?: "runtime" | "ui" | "test" | "docs" | "config" | "memory" | "requirement" | "cli" | "unknown";
+  matchedSignals?: string[];
+  preview?: string;
+  startLine?: number;
+};
+
+export type TaskIntentKind = "bugfix" | "feature" | "refactor" | "review" | "test" | "docs" | "config" | "unknown";
+
+export type TaskAnalysis = {
+  intent: TaskIntentKind;
+  ambiguity: "low" | "medium" | "high";
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  signals: string[];
+  routingReason: string;
+  shouldAskBeforeEdit: boolean;
+  suggestedSearches: string[];
+};
+
+export type TaskSkillSuggestion = {
+  id: string;
+  name: string;
+  reason: string;
+  matchedSignals: string[];
+  usageHint: string;
+  localRuleNote: string;
+  conflictRisk: RecommendationRisk;
+  status: "recommended" | "enabled" | "disabled" | "ignored";
+};
+
+export type TaskMemorySuggestion = {
+  memoryId: string;
+  requirementId?: string;
+  title: string;
+  keywords: string[];
+  reason: string;
+  restoreTool: string;
+};
+
+export type PreparedTaskRequirementMatch = {
+  requirementId: string;
+  title: string;
+  status: RequirementStatus;
+  reason: string;
+  keywords: string[];
+  reviewCount: number;
+  startWorkSegmentTool: string;
+  recordDiffTool: string;
+};
+
+export type TaskExecutionStep = {
+  order: number;
+  title: string;
+  action: string;
+  reason: string;
+  when: "always" | "if_missing_context" | "if_relevant_memory" | "if_relevant_skill" | "after_edit";
+  tool?: string;
+};
+
+export type PreparedTask = {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  taskAnalysis: TaskAnalysis;
+  requirement: {
+    originalInput: string;
+    clarifiedGoal: string;
+    missingQuestions: string[];
+    acceptanceCriteria: string[];
+  };
+  codePointers: TaskCodePointer[];
+  matchedRequirement: PreparedTaskRequirementMatch | null;
+  skillSuggestions: TaskSkillSuggestion[];
+  memorySuggestions: TaskMemorySuggestion[];
+  memoryIndex: MemoryIndex;
+  executionPlan: TaskExecutionStep[];
+  agentInstructions: string;
 };
 
 export type BootstrapSession = {
@@ -208,6 +641,8 @@ export type BootstrapSession = {
   capabilityCenter: CapabilityCenter;
   assembly: RuntimeAssembly;
   handoff: MemoryHandoff;
+  memoryDigest: MemoryDigest;
+  requirementDossier: RequirementDossier;
   workflow: {
     when: string;
     actions: string[];
@@ -292,6 +727,11 @@ export type SkillRegistryItem = {
   source: PoolSource;
   tags: string[];
   risk: PoolRisk;
+};
+
+export type SkillDetail = {
+  item: SkillRegistryItem;
+  content: string;
 };
 
 export type PoolInitResult = {

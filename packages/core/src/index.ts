@@ -1,10 +1,30 @@
 // core 的公共出口。CLI/Web/MCP 都应该从这里引用能力，避免深入依赖内部目录。
 export type {
   DiffSummary,
+  CodeSnapshotState,
+  CodeSnapshotStatus,
+  GitChangeSnapshot,
+  MemoryTimeline,
+  RequirementDossier,
+  RequirementDossierItem,
+  RequirementDossierSession,
+  MemoryDigest,
+  MemoryDigestItem,
+  MemoryIndex,
+  MemoryIndexItem,
   ProjectProfile,
   PoolInitResult,
   ReviewDraft,
+  ReviewOverview,
+  ReviewOverviewBatch,
+  ReviewRequirementBlock,
+  ReviewRequirementBlockKind,
   ReviewReport,
+  SourceReadingItem,
+  RecordingStatus,
+  PreparedTask,
+  RequirementRestore,
+  RequirementTimelineItem,
   RegistryFile,
   SessionMemory,
   McpManifest,
@@ -13,14 +33,31 @@ export type {
   ProjectSelectionItem,
   ProjectSelectionStatus,
   RuntimeAssembly,
+  SkillDetail,
   SkillRegistryItem,
   ToolRecommendation,
   ProjectStatus,
   RegisteredProject,
   ProjectRegistryFile,
+  RequirementFile,
+  RequirementInput,
+  RequirementRecord,
+  RequirementReviewLink,
+  RequirementStatus,
+  WorkSegment,
+  WorkSegmentCompletionInput,
+  WorkSegmentFile,
+  WorkSegmentInput,
+  WorkSegmentStatus,
+  WorkSegmentStatusReport,
+  TaskCodePointer,
+  TaskMemorySuggestion,
+  PreparedTaskRequirementMatch,
+  TaskSkillSuggestion,
   MarketplaceSkill,
   MarketplaceSkillCandidate,
   MarketplaceSkillInstallResult,
+  MarketplaceSkillPreview,
   MarketplaceSkillSearchResult,
   MarketplaceConflictLevel,
   MarketplaceMcp,
@@ -48,6 +85,14 @@ export {
   registerProject,
   setActiveProject,
 } from "./projects/project-registry.js";
+export {
+  attachReviewToRequirement,
+  createRequirement,
+  getActiveRequirement,
+  listRequirements,
+  resolveRequirementForReview,
+  setActiveRequirement,
+} from "./requirements/requirement-manager.js";
 export { recommendForProject } from "./recommendations/recommender.js";
 export {
   createMarketplaceKeywords,
@@ -64,11 +109,37 @@ export {
   createReviewReport,
 } from "./diff/diff-analyzer.js";
 export {
+  createGitChangeSnapshot,
+  evaluateCodeSnapshot,
+} from "./git/change-snapshot.js";
+export {
+  createMemoryIndex,
+  createMemoryDigest,
   createMemoryHandoff,
+  listSessionMemories,
   recallSessions,
+  restoreRequirementMemory,
   saveSessionMemory,
 } from "./memory/session-memory.js";
+export { createRequirementDossier } from "./memory/requirement-dossier.js";
+export {
+  completeWorkSegment,
+  createWorkSegmentStatus,
+  getActiveWorkSegment,
+  listWorkSegments,
+  startWorkSegment,
+} from "./work-segments/work-segment-manager.js";
+export {
+  prepareTask,
+  recommendSkillsForTask,
+} from "./task/task-preparer.js";
+export { createMemoryTimeline } from "./memory/memory-timeline.js";
+export { getRecordingStatus } from "./recording/recording-status.js";
 export { currentProjectStatus } from "./status/project-status.js";
+export {
+  SPECWEFT_MCP_TOOL_NAMES,
+  type SpecWeftMcpToolName,
+} from "./mcp/tool-names.js";
 export {
   createMarketplaceMcpId,
   createMarketplaceSkillId,
@@ -77,6 +148,8 @@ export {
   installMarketplaceSkill,
   listMcpPool,
   listSkillPool,
+  previewMarketplaceSkill,
+  readSkillDetail,
 } from "./pool/pool-manager.js";
 export {
   applyProjectMcp,

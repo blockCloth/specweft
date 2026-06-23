@@ -11,6 +11,7 @@ import {
   installMarketplaceSkill,
   listMcpPool,
   listSkillPool,
+  readSkillDetail,
 } from "../pool/pool-manager.js";
 import type { MarketplaceMcpCandidate, MarketplaceSkill } from "../schemas/types.js";
 
@@ -44,6 +45,23 @@ test("keeps marketplace Skills when global pools are initialized again", async (
 
     assert.ok(pool.items.some((item) => item.id === installed.item.id));
     assert.ok(pool.items.some((item) => item.id === "diff-explainer"));
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("reads installed Skill detail content from the global pool", async () => {
+  const home = await createTempHome();
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await initializeGlobalPools();
+    const installed = await installMarketplaceSkill(marketplaceSkill(), "# Java Review\n\nUse project rules first.\n");
+    const detail = await readSkillDetail(installed.item.id);
+
+    assert.equal(detail?.item.id, installed.item.id);
+    assert.match(detail?.content ?? "", /Use project rules first/);
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });

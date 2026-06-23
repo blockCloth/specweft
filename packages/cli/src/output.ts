@@ -1,5 +1,5 @@
 export function printJson(value: unknown): void {
-  // CLI 命令默认输出 JSON，方便后续被脚本、Web 或 MCP adapter 复用。
+  // 只在命令明确需要机器可读输出时使用；面向用户的命令优先走 printText。
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
