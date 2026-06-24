@@ -72,8 +72,13 @@ async function requestLlmReview(
   diff: DiffSummary,
   profile: ProjectProfile,
 ): Promise<string> {
+  const timeoutMs = Number(process.env.SPECWEFT_LLM_TIMEOUT_MS || 15000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
+    signal: controller.signal,
     headers: {
       "authorization": `Bearer ${config.apiKey}`,
       "content-type": "application/json",
@@ -98,7 +103,7 @@ async function requestLlmReview(
       ],
       response_format: { type: "json_object" },
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     const text = await response.text();

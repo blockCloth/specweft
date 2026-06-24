@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import type { ProjectProfile } from "../schemas/types.js";
 import { projectConfigDir, toPosixPath } from "../utils/path.js";
 import { readJsonFile, writeJsonFile } from "../utils/json.js";
+import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -29,7 +30,7 @@ export async function initializeProject(repoPath: string): Promise<ProjectProfil
   await writeJsonFile(path.join(configDir, "profile.json"), profile);
   await ensureJsonFile(path.join(configDir, "mcp.json"), { version: 1, selected: [] });
   await ensureJsonFile(path.join(configDir, "skills.json"), { version: 1, selected: [] });
-  await ensureJsonFile(path.join(configDir, "memory.json"), { sessions: [] });
+  await ensureSecureJsonFile(path.join(configDir, "memory.json"), { sessions: [] });
 
   return profile;
 }
@@ -205,4 +206,13 @@ async function ensureJsonFile(filePath: string, value: unknown): Promise<void> {
   }
 
   await writeJsonFile(filePath, value);
+}
+
+async function ensureSecureJsonFile(filePath: string, value: unknown): Promise<void> {
+  const existing = await readSecureJsonFile<unknown>(filePath);
+  if (existing !== undefined) {
+    return;
+  }
+
+  await writeSecureJsonFile(filePath, value);
 }

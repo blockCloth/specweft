@@ -11,7 +11,7 @@ import type {
   WorkSegmentStatusReport,
 } from "../schemas/types.js";
 import { createGitChangeSnapshot } from "../git/change-snapshot.js";
-import { readJsonFile, writeJsonFile } from "../utils/json.js";
+import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
 import { projectConfigDir } from "../utils/path.js";
 
 const MAX_STORED_SEGMENTS = 100;
@@ -183,7 +183,7 @@ function createFileDelta(
 }
 
 async function readWorkSegmentFile(repoPath: string): Promise<WorkSegmentFile> {
-  const file = await readJsonFile<WorkSegmentFile>(workSegmentPath(repoPath));
+  const file = await readSecureJsonFile<WorkSegmentFile>(workSegmentPath(repoPath));
 
   return {
     version: file?.version ?? 1,
@@ -194,7 +194,7 @@ async function readWorkSegmentFile(repoPath: string): Promise<WorkSegmentFile> {
 
 async function writeWorkSegmentFile(repoPath: string, file: WorkSegmentFile): Promise<void> {
   const segments = sortSegments(file.segments).slice(0, MAX_STORED_SEGMENTS);
-  await writeJsonFile(workSegmentPath(repoPath), {
+  await writeSecureJsonFile(workSegmentPath(repoPath), {
     version: 1,
     activeSegmentId: segments.some((segment) => segment.id === file.activeSegmentId && segment.status === "active")
       ? file.activeSegmentId

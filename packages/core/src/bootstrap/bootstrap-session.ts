@@ -16,6 +16,7 @@ import { applyProjectMcp, applyProjectSkill } from "../selection/selection-manag
 import { projectConfigDir } from "../utils/path.js";
 import { createCapabilityCenter } from "../capabilities/capability-center.js";
 import { getActiveRequirement } from "../requirements/requirement-manager.js";
+import { writeAgentHarness } from "../harness/agent-harness.js";
 
 const DEFAULT_MCP_IDS = ["filesystem", "git"];
 const DEFAULT_SKILL_IDS = ["diff-explainer", "test-planner"];
@@ -60,6 +61,7 @@ export async function initializeSpecWeftProject(repoPath: string): Promise<SpecW
   const enabled = await enableDefaultTools(repoPath);
   const bootstrap = await createBootstrapSession(repoPath);
   const instructionPaths = await writeAgentInstructions(repoPath, profile);
+  const harness = await writeAgentHarness(repoPath, profile);
 
   return {
     repoPath,
@@ -67,6 +69,7 @@ export async function initializeSpecWeftProject(repoPath: string): Promise<SpecW
     pool,
     enabled,
     instructionPaths,
+    harness,
     bootstrap,
     nextCommands: [
       "specweft start",
@@ -95,8 +98,8 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
         "Call specweft.prepare_task with the user's request before editing code.",
         "If prepare_task returns missingQuestions, ask the user unless the answer is obvious from the repository.",
         "If prepare_task returns relevant memorySuggestions, call specweft.restore_requirement for the best match before editing.",
-        "Call specweft.start_work_segment before editing so mixed diffs can be separated by request boundary.",
-        "If the task continues a known requirement, pass that requirementId when recording the final diff.",
+        "Call specweft.start_work_segment with prepare_task.guardrail.startWorkSegmentInput before editing.",
+        "Keep prepare_task.guardrail.recordCurrentDiffInput for the final record_current_diff call.",
         "Use specweft.recommend_skills_for_task to pick task-specific Skills instead of enabling unrelated tools.",
       ],
     },
@@ -110,10 +113,11 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
     {
       when: "After changing code",
       actions: [
-        "Call specweft.record_current_diff with a short title to persist the review report and memory.",
+        "Call specweft.record_current_diff with prepare_task.guardrail.recordCurrentDiffInput to persist the review report and memory.",
         "record_current_diff automatically closes the active work segment; call specweft.get_work_segment_status if the diff mixes several requests.",
         "Call specweft.get_recording_status again; if it is unrecorded or changed-after-record, call specweft.record_current_diff before handing back.",
-        "If you only need a temporary explanation without saving, call specweft.review_current_diff.",
+        "Use record_current_diff.agentReview.suggestedAgentResponse for the user-facing explanation; read advancedReview only if the user asks for deeper evidence.",
+        "If you only need a temporary explanation without saving, call specweft.review_current_diff and use agentReview.",
       ],
     },
     {
@@ -178,10 +182,10 @@ function createAgentInstructionBlock(profile: ProjectProfile): string {
     "3. Before planning or editing a user request, call `specweft.prepare_task` with the user's natural language task.",
     "4. If `prepare_task` returns `missingQuestions`, ask the user unless the answer is obvious from the repository.",
     "5. If `prepare_task` returns relevant memories, call `specweft.restore_requirement` for the best match instead of loading every memory.",
-    "6. Before editing, call `specweft.start_work_segment` with the current task, so mixed uncommitted diffs can be separated by request boundary.",
+    "6. Before editing, call `specweft.start_work_segment` with `prepare_task.guardrail.startWorkSegmentInput`, so mixed uncommitted diffs can be separated by request boundary.",
     "7. Use `specweft.recommend_skills_for_task` for task-specific Skill routing. Treat MCP recommendations as optional, not required.",
     "8. Call `specweft.get_recording_status` before and after edits; never finish with an unrecorded or changed-after-record diff.",
-    "9. After changing code, call `specweft.record_current_diff` with a short title and requirementId when available, so the review, work segment, and memory stay bound to the correct requirement line.",
+    "9. After changing code, call `specweft.record_current_diff` with `prepare_task.guardrail.recordCurrentDiffInput`, then use `agentReview.suggestedAgentResponse` for the user-facing explanation.",
     "10. Do not install marketplace MCPs or Skills automatically when they require credentials, network access, database access, or conflict with local rules.",
     "",
     INSTRUCTION_END_MARKER,

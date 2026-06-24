@@ -3,6 +3,7 @@ import {
   analyzeCurrentDiff,
   applyProjectMcp,
   applyProjectSkill,
+  createAgentReviewPacket,
   createBootstrapSession,
   createCapabilityCenter,
   createMemoryDigest,
@@ -443,16 +444,24 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
         getActiveWorkSegment(resolvedRepoPath),
       ]);
       const review = createReviewDraft(diff, {
+        title: "当前 diff 临时讲解",
         requirements: requirements.requirements,
         activeRequirementId: requirements.activeRequirementId,
         memoryDigest,
         activeWorkSegment,
       });
+      const agentReview = createAgentReviewPacket({
+        title: "当前 diff 临时讲解",
+        review,
+        diff,
+        requirement: requirements.requirements.find((item) => item.id === requirements.activeRequirementId),
+      });
       return jsonToolResult({
         diff: createCompactDiffSummary(diff),
         activeWorkSegment,
-        review,
-        note: "Full patch text is intentionally omitted from MCP output. Use the sourceReadingGuide paths or git diff locally when exact hunks are needed.",
+        agentReview,
+        advancedReview: review,
+        note: "Use agentReview first. Full patch text is intentionally omitted from MCP output; inspect sourceReading paths only when exact hunks are needed.",
       });
     },
   );
@@ -468,12 +477,21 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
       const report = await createReviewReport(resolvedRepoPath, profile, title, 7, requirementId);
+      const diff = await analyzeCurrentDiff(resolvedRepoPath);
+      const agentReview = createAgentReviewPacket({
+        title: report.title,
+        review: report.review,
+        diff,
+        requirement: report.requirement,
+        reportPath: report.reportPath,
+      });
       return jsonToolResult({
         title: report.title,
         reportPath: report.reportPath,
         memory: report.memory,
         requirement: report.requirement,
-        review: report.review,
+        agentReview,
+        advancedReview: report.review,
       });
     },
   );

@@ -20,6 +20,7 @@ import { runPrepare } from "./commands/prepare.js";
 import { runSegment } from "./commands/segment.js";
 import { readCliVersion } from "./package-info.js";
 import { runDoctor, runSetupClaude, runSetupCodex } from "./commands/connect.js";
+import { runProtect } from "./commands/protect.js";
 
 // CLI 的总入口：只负责解析命令并分发到具体 command。
 // 真正的业务逻辑放在 @specweft/core，后续 Web/MCP 也能复用同一套 core。
@@ -98,6 +99,11 @@ async function main(): Promise<void> {
 
   if (args.command === "status") {
     await runStatus(args.repo);
+    return;
+  }
+
+  if (args.command === "protect") {
+    await runProtect(args.repo, args.statusOnly);
     return;
   }
 
@@ -186,6 +192,8 @@ Usage:
   specweft review --title "Implement MCP tools"
   specweft recall --keyword "login"
   specweft handoff --keyword "login"
+  specweft protect
+  specweft protect --status
   specweft segment status
   specweft segment start "Improve login validation"
   specweft pool init
@@ -211,6 +219,7 @@ Commands:
   review      Inspect current git diff and create a review draft.
   recall      Search recent local session memories by keyword.
   handoff     Create a new-thread memory handoff prompt.
+  protect     Encrypt requirement memory state with SPECWEFT_MEMORY_KEY.
   segment     Start, finish, or inspect lightweight work segments for mixed diffs.
   status      Show project config, memory, MCP, and skill status.
   pool        Manage the global MCP and Skill pools.
@@ -233,6 +242,7 @@ Options:
   --port      Web UI port. Defaults to 4177.
   --json      Print raw JSON for commands that default to human-readable output.
   --full      Include full detail for commands that default to compact output.
+  --status    For protect, print protection status without migrating files.
 `);
     return;
   }
@@ -259,6 +269,8 @@ Options:
   specweft review --title "实现 MCP 工具"
   specweft recall --keyword "登录"
   specweft handoff --keyword "登录"
+  specweft protect
+  specweft protect --status
   specweft segment status
   specweft segment start "优化登录校验"
   specweft pool init
@@ -284,6 +296,7 @@ Options:
   review      分析当前 git diff，并生成本次修改说明。
   recall      按关键词搜索最近的本地会话记忆。
   handoff     生成新线程可用的记忆交接提示。
+  protect     使用 SPECWEFT_MEMORY_KEY 加密需求记忆状态文件。
   segment     开始、结束或查看轻量工作段，用来区分混在一起的多个需求 diff。
   status      查看项目配置、记忆、MCP 和 Skill 状态。
   pool        管理全局 MCP 和 Skill 池。
@@ -306,6 +319,7 @@ Options:
   --port      Web UI 端口，默认是 4177。
   --json      对默认人类可读的命令输出原始 JSON。
   --full      对默认紧凑的命令输出完整详情。
+  --status    protect 命令只查看保护状态，不迁移文件。
 `);
 }
 

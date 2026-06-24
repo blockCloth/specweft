@@ -27,64 +27,39 @@ function formatReviewOutput(report: ReviewReport): string {
     `代码状态：${report.memory.codeStatus ?? "-"} - ${report.memory.codeStatusReason ?? "-"}`,
     `过期时间：${report.memory.expiresAt}`,
     "",
-    "本次修改摘要：",
-    `- ${report.review.summary}`,
+    "需求上下文：",
+    report.review.reviewDigest.requirementContext,
     "",
-    "本次修改概览：",
-    formatReviewOverview(report.review.reviewOverview),
+    "一句话总结：",
+    report.review.reviewDigest.oneLineSummary,
     "",
-    "需求拆解：",
-    formatRequirementBlocks(report.review.requirementBlocks),
+    "需求分块：",
+    formatDigestSections(report.review.reviewDigest.sections),
     "",
-    "改动分组：",
-    formatChangeGroups(report.review.changeGroups),
+    "为什么这样改：",
+    formatList(report.review.reviewDigest.whyChanged),
     "",
-    "实现内容总结：",
-    formatList(report.review.implementationSummary),
+    "实现思路：",
+    formatList(report.review.reviewDigest.implementationPath),
     "",
-    "主要改动：",
-    formatList(report.review.mainChanges),
+    "阅读入口：",
+    formatDigestReadingPath(report.review.reviewDigest.readingPath),
     "",
-    "源码查看方式：",
-    formatSourceReadingGuide(report.review.sourceReadingGuide),
+    "注意点：",
+    formatList(report.review.reviewDigest.reviewNotes),
     "",
-    "建议 Review 顺序：",
-    formatList(report.review.reviewWalkthrough),
+    "验证建议：",
+    formatList(report.review.reviewDigest.validation),
     "",
-    "风险提示：",
-    formatList(report.review.risks),
-    "",
-    "测试建议：",
-    formatList(report.review.testSuggestions),
+    "判断置信度：",
+    `${formatConfidence(report.review.reviewDigest.confidence)} - ${report.review.reviewDigest.confidenceReasons.join("；") || "-"}`,
     "",
     "新线程继承提示：",
     report.review.nextThreadPrompt,
+    "",
+    "高级详情：",
+    `- 报告中保留了需求拆解、改动分组、高级源码详情、风险和测试建议：${report.reportPath}`,
   ].join("\n");
-}
-
-function formatReviewOverview(overview: ReviewReport["review"]["reviewOverview"]): string {
-  const lines = [
-    overview.title,
-    `摘要：${overview.summary}`,
-    ...overview.keyValues.map((item) => `${item.key}：${item.value}`),
-  ];
-
-  if (overview.readingOrder.length > 0) {
-    lines.push("建议阅读顺序：");
-    lines.push(...overview.readingOrder.map((item) => `- ${item}`));
-  }
-
-  if (overview.batches.length > 0) {
-    lines.push("修改批次：");
-    for (const batch of overview.batches) {
-      lines.push(`- ${batch.title}`);
-      lines.push(`  摘要：${batch.summary}`);
-      lines.push(`  建议动作：${batch.suggestedAction}`);
-      lines.push(`  文件：${batch.files.map((file) => file.path).join(", ") || "-"}`);
-    }
-  }
-
-  return lines.join("\n");
 }
 
 function formatList(items: string[]): string {
@@ -95,46 +70,31 @@ function formatList(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
-function formatRequirementBlocks(blocks: ReviewReport["review"]["requirementBlocks"]): string {
-  if (blocks.length === 0) {
+function formatDigestSections(items: ReviewReport["review"]["reviewDigest"]["sections"]): string {
+  if (items.length === 0) {
     return "- 无";
   }
 
-  return blocks.map((block, index) => [
-    `${index + 1}. ${block.title}`,
-    `   类型：${formatRequirementBlockKind(block.kind)}`,
-    `   摘要：${block.summary}`,
-    `   置信度：${formatConfidence(block.confidence)}`,
-    `   建议动作：${block.suggestedAction}`,
-    `   证据：${block.evidence.join("；") || "-"}`,
-    `   文件：${block.files.map((file) => file.path).join(", ") || "-"}`,
-  ].join("\n")).join("\n");
+  return items.map((item, index) => [
+    `${index + 1}. ${item.title}`,
+    `   摘要：${item.summary}`,
+    `   为什么：${item.whyChanged}`,
+    `   实现：${item.implementation}`,
+    item.readingEntry ? `   入口：${item.readingEntry.path}` : undefined,
+    item.validation ? `   验证：${item.validation}` : undefined,
+    `   置信度：${formatConfidence(item.confidence)}`,
+  ].filter((line): line is string => line !== undefined).join("\n")).join("\n");
 }
 
-function formatChangeGroups(groups: ReviewReport["review"]["changeGroups"]): string {
-  if (groups.length === 0) {
+function formatDigestReadingPath(items: ReviewReport["review"]["reviewDigest"]["readingPath"]): string {
+  if (items.length === 0) {
     return "- 无";
   }
 
-  return groups.map((group, index) => [
-    `${index + 1}. ${group.title}`,
-    `   目的：${group.purpose}`,
-    ...group.keyValues.map((item) => `   ${item.key}：${item.value}`),
-    `   文件：${group.files.map((file) => file.path).join(", ")}`,
-  ].join("\n")).join("\n");
-}
-
-function formatRequirementBlockKind(kind: ReviewReport["review"]["requirementBlocks"][number]["kind"]): string {
-  if (kind === "current-work") {
-    return "当前需求";
-  }
-  if (kind === "historical-requirement") {
-    return "历史需求";
-  }
-  if (kind === "functional-area") {
-    return "功能域候选";
-  }
-  return "旧改动";
+  return items.map((item, index) => {
+    const title = item.title && item.title !== item.path ? `${item.title}：` : "";
+    return `${index + 1}. ${title}${item.path}，${item.reason}`;
+  }).join("\n");
 }
 
 function formatConfidence(confidence: "high" | "medium" | "low"): string {
@@ -145,19 +105,4 @@ function formatConfidence(confidence: "high" | "medium" | "low"): string {
     return "中";
   }
   return "低";
-}
-
-function formatSourceReadingGuide(items: ReviewReport["review"]["sourceReadingGuide"]): string {
-  if (items.length === 0) {
-    return "- 无";
-  }
-
-  return items
-    .map((item) => [
-      `- ${item.path}`,
-      `  关注点：${item.reason}`,
-      `  查看：${item.command}`,
-      `  路径：${item.absolutePath}`,
-    ].join("\n"))
-    .join("\n");
 }

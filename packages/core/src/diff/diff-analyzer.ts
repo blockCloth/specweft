@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import type {
   DiffFileChange,
   DiffSummary,
+  AgentReviewPacket,
   MemoryDigest,
   ProjectProfile,
   RequirementRecord,
@@ -29,6 +30,7 @@ import { completeWorkSegment, getActiveWorkSegment } from "../work-segments/work
 const execFileAsync = promisify(execFile);
 
 type ReviewDraftContext = {
+  title?: string;
   requirements?: RequirementRecord[];
   memoryDigest?: MemoryDigest;
   activeRequirementId?: string;
@@ -102,12 +104,12 @@ const FUNCTIONAL_GROUPS: Record<string, FunctionalGroupMetadata> = {
   "functional:review": {
     title: "代码讲解与 Review 报告",
     area: "review",
-    purpose: "这组文件负责把 git diff 讲成人能读懂的修改说明，review 时重点确认分组、源码查看方式、风险和测试建议足够清楚。",
+    purpose: "这组文件负责把 git diff 讲成人能读懂的修改说明，review 时重点确认默认讲解、高级源码详情、风险和测试建议足够清楚。",
     reviewNotes: [
       "确认多个需求混在同一个暂存区时，会尽量拆成不同讲解块。",
       "检查 HTML 报告和 Markdown 报告是否表达一致。",
     ],
-    testSuggestions: ["运行 diff-analyzer 测试，确认分组标题、key-value 和源码查看方式没有回退。"],
+    testSuggestions: ["运行 diff-analyzer 测试，确认分组标题、key-value 和高级源码详情没有回退。"],
   },
   "functional:capability": {
     title: "能力池、Skill 与 MCP 适配",
@@ -219,6 +221,7 @@ export function createReviewDraft(diff: DiffSummary, context: ReviewDraftContext
     return {
       summary: "当前没有检测到未提交的 git diff。",
       intent: "当前还没有可以讲解的本地修改。",
+      reviewDigest: createEmptyReviewDigest(),
       reviewOverview: {
         title: "没有可讲解的本地修改",
         summary: "当前工作区没有检测到可用于 review 的代码改动。",
@@ -261,25 +264,46 @@ export function createReviewDraft(diff: DiffSummary, context: ReviewDraftContext
   const reviewOverview = createReviewOverview(diff, requirementBlocks, changeGroups, context.activeWorkSegment);
   const workSegmentNotes = createWorkSegmentReviewNotes(context.activeWorkSegment, diff);
   const workSegmentRisk = createWorkSegmentRisk(context.activeWorkSegment);
+  const implementationSummary = createImplementationSummary(diff, {
+    hasTests,
+    hasRuntimeCode,
+    hasConfig,
+    hasDocs,
+  });
+  const sourceReadingGuide = createSourceReadingGuide(diff);
+  const reviewWalkthrough = [
+    ...workSegmentNotes,
+    ...createReviewWalkthrough(diff.changedFiles),
+  ];
+  const risks = [
+    ...workSegmentRisk,
+    ...createReviewRisks({ hasTests, hasRuntimeCode, hasConfig, hasDocs }),
+  ];
+  const testSuggestions = createTestSuggestions({ hasTests, hasRuntimeCode, hasConfig, hasDocs });
 
   return {
     summary,
     intent: createReviewIntent(diff.changedFiles, impactAreas, context.activeWorkSegment),
+    reviewDigest: createReviewDigest({
+      diff,
+      summary,
+      requirementBlocks,
+      changeGroups,
+      implementationSummary,
+      sourceReadingGuide,
+      reviewWalkthrough,
+      risks,
+      testSuggestions,
+      title: context.title,
+      activeWorkSegment: context.activeWorkSegment,
+    }),
     reviewOverview,
     requirementBlocks,
     changeGroups,
-    implementationSummary: createImplementationSummary(diff, {
-      hasTests,
-      hasRuntimeCode,
-      hasConfig,
-      hasDocs,
-    }),
+    implementationSummary,
     mainChanges: diff.changedFiles.map((file) => describeFileChange(file)),
-    sourceReadingGuide: createSourceReadingGuide(diff),
-    reviewWalkthrough: [
-      ...workSegmentNotes,
-      ...createReviewWalkthrough(diff.changedFiles),
-    ],
+    sourceReadingGuide,
+    reviewWalkthrough,
     impactAreas,
     overEngineeringSignals: createOverEngineeringSignals(diff),
     reviewChecklist: [
@@ -291,11 +315,8 @@ export function createReviewDraft(diff: DiffSummary, context: ReviewDraftContext
         ? "沿着受影响的运行入口追踪一遍代码执行路径。"
         : "确认这些修改不需要额外的运行时验证。",
     ],
-    risks: [
-      ...workSegmentRisk,
-      ...createReviewRisks({ hasTests, hasRuntimeCode, hasConfig, hasDocs }),
-    ],
-    testSuggestions: createTestSuggestions({ hasTests, hasRuntimeCode, hasConfig, hasDocs }),
+    risks,
+    testSuggestions,
     nextThreadPrompt: createNextThreadPrompt(summary, diff.changedFiles, impactAreas),
   };
 }
@@ -330,6 +351,7 @@ export async function createReviewReport(
     requirementId,
   );
   const review = await enhanceReviewWithLlm(createReviewDraft(diff, {
+    title: reportTitle,
     requirements: requirementFile.requirements,
     activeRequirementId: requirement.id,
     memoryDigest,
@@ -382,6 +404,44 @@ export async function createReviewReport(
     review,
     memory,
     requirement: updatedRequirement,
+  };
+}
+
+export function createAgentReviewPacket(input: {
+  title: string;
+  review: ReviewDraft;
+  diff: DiffSummary;
+  requirement?: RequirementRecord;
+  reportPath?: string;
+}): AgentReviewPacket {
+  const sourceReading = input.review.reviewDigest.readingPath.length > 0
+    ? input.review.reviewDigest.readingPath.map((item) => ({
+        path: item.path,
+        reason: item.reason,
+      }))
+    : input.review.sourceReadingGuide.slice(0, 5).map((item) => ({
+        path: item.path,
+        reason: item.reason,
+      }));
+
+  return {
+    title: input.title,
+    requirement: input.requirement
+      ? {
+          id: input.requirement.id,
+          title: input.requirement.title,
+        }
+      : undefined,
+    digest: input.review.reviewDigest,
+    changedFiles: input.diff.changedFiles.map((file) => file.path).slice(0, 12),
+    sourceReading,
+    suggestedAgentResponse: createSuggestedAgentReviewResponse(input.review.reviewDigest, input.reportPath),
+    nextActions: createAgentReviewNextActions(input.review),
+    advanced: {
+      reportPath: input.reportPath,
+      fullReviewAvailable: true,
+      omittedPatch: true,
+    },
   };
 }
 
@@ -676,6 +736,547 @@ function createReviewOverview(
     batches,
     readingOrder: createOverviewReadingOrder(batches, groups),
   };
+}
+
+function createEmptyReviewDigest(): ReviewDraft["reviewDigest"] {
+  return {
+    title: "暂无本地修改",
+    requirementContext: "当前工作区没有检测到可用于讲解的本地 diff。",
+    oneLineSummary: "还没有可以复盘的代码变化。",
+    sections: [],
+    whyChanged: ["先产生一次和需求相关的本地修改，再生成代码讲解。"],
+    implementationPath: ["暂无实现路径。"],
+    readingPath: [],
+    reviewNotes: ["确认文件已经保存，并且当前目录是 git 仓库。"],
+    validation: ["如果只是想看项目状态，请使用 status/doctor 类命令。"],
+    confidence: "high",
+    confidenceReasons: ["没有检测到 changedFiles，判断明确。"],
+  };
+}
+
+function createSuggestedAgentReviewResponse(
+  digest: ReviewDraft["reviewDigest"],
+  reportPath?: string,
+): string {
+  const lines = [
+    `这次修改可以按「${digest.title}」来理解。`,
+    digest.oneLineSummary,
+    "",
+    "需求上下文：",
+    digest.requirementContext,
+    "",
+    "为什么这样改：",
+    ...digest.whyChanged.slice(0, 3).map((item) => `- ${item}`),
+    "",
+    "实现思路：",
+    ...digest.implementationPath.slice(0, 4).map((item) => `- ${item}`),
+    ...formatSuggestedAgentSections(digest.sections),
+    "",
+    "阅读入口：",
+    ...digest.readingPath.slice(0, 4).map((item, index) => {
+      const title = item.title && item.title !== item.path ? `${item.title}：` : "";
+      return `${index + 1}. ${title}${item.path}，${item.reason}`;
+    }),
+  ];
+
+  if (digest.validation.length > 0) {
+    lines.push("", "验证建议：", ...digest.validation.slice(0, 3).map((item) => `- ${item}`));
+  }
+  if (reportPath) {
+    lines.push("", `完整高级详情已保存到：${reportPath}`);
+  }
+
+  return lines.join("\n");
+}
+
+function formatSuggestedAgentSections(sections: ReviewDraft["reviewDigest"]["sections"]): string[] {
+  if (sections.length === 0) {
+    return [];
+  }
+
+  return [
+    "",
+    "需求分块：",
+    ...sections.slice(0, 4).flatMap((section, index) => [
+      `${index + 1}. ${section.title}`,
+      `   - 为什么：${section.whyChanged}`,
+      `   - 实现：${section.implementation}`,
+      section.readingEntry ? `   - 入口：${section.readingEntry.path}` : undefined,
+    ].filter((item): item is string => item !== undefined)),
+  ];
+}
+
+function createAgentReviewNextActions(review: ReviewDraft): string[] {
+  const actions = [
+    "把 digest 作为默认回复内容，不要把完整 diff 或全部分组直接贴给用户。",
+    "如果用户要深挖，再读取 sourceReading 里的文件或打开 advanced.reportPath。",
+    "如果 confidence 是 low 或需求边界不清晰，先提醒用户确认这次 diff 是否混入多个需求。",
+  ];
+
+  if (review.reviewDigest.validation.length > 0) {
+    actions.push(`优先执行或建议执行：${review.reviewDigest.validation[0]}`);
+  }
+
+  return actions;
+}
+
+function createReviewDigest(input: {
+  title?: string;
+  diff: DiffSummary;
+  summary: string;
+  requirementBlocks: ReviewRequirementBlock[];
+  changeGroups: ReviewChangeGroup[];
+  implementationSummary: string[];
+  sourceReadingGuide: ReviewDraft["sourceReadingGuide"];
+  reviewWalkthrough: string[];
+  risks: string[];
+  testSuggestions: string[];
+  activeWorkSegment?: WorkSegment;
+}): ReviewDraft["reviewDigest"] {
+  const confidence = createDigestConfidence(input.requirementBlocks, input.changeGroups, input.activeWorkSegment);
+  const readingPath = createDigestReadingPath(input.sourceReadingGuide, input.changeGroups);
+  const sections = createDigestSections(input.requirementBlocks, input.changeGroups, readingPath);
+
+  return {
+    title: createDigestTitle(input.title, input.requirementBlocks, input.changeGroups, input.activeWorkSegment),
+    requirementContext: createDigestRequirementContext(
+      input.diff,
+      input.requirementBlocks,
+      input.changeGroups,
+      input.activeWorkSegment,
+    ),
+    oneLineSummary: createDigestOneLineSummary(input.title, input.diff, input.requirementBlocks, input.changeGroups, input.summary),
+    sections,
+    whyChanged: createDigestWhyChanged(input.title, input.requirementBlocks, input.changeGroups, input.activeWorkSegment),
+    implementationPath: createDigestImplementationPath(input.implementationSummary, input.changeGroups),
+    readingPath,
+    reviewNotes: createDigestReviewNotes(input.reviewWalkthrough, input.risks, input.changeGroups),
+    validation: createDigestValidation(input.testSuggestions, input.risks),
+    confidence: confidence.confidence,
+    confidenceReasons: confidence.confidenceReasons,
+  };
+}
+
+function createDigestTitle(
+  title: string | undefined,
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  activeWorkSegment?: WorkSegment,
+): string {
+  if (title?.trim()) {
+    return title.trim();
+  }
+
+  if (activeWorkSegment?.title.trim()) {
+    return activeWorkSegment.title.trim();
+  }
+
+  const firstCurrentBlock = blocks.find((block) => block.kind === "current-work");
+  if (firstCurrentBlock) {
+    return cleanDigestTitle(firstCurrentBlock.title);
+  }
+
+  const firstHistoricalBlock = blocks.find((block) => block.kind === "historical-requirement");
+  if (firstHistoricalBlock) {
+    return cleanDigestTitle(firstHistoricalBlock.title);
+  }
+
+  const firstGroup = groups[0];
+  if (firstGroup) {
+    const suffix = groups.length > 1 ? ` 等 ${groups.length} 组改动` : "";
+    return `${cleanDigestTitle(firstGroup.title)}${suffix}`;
+  }
+
+  return "本地修改讲解";
+}
+
+function createDigestRequirementContext(
+  diff: DiffSummary,
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  activeWorkSegment?: WorkSegment,
+): string {
+  if (activeWorkSegment) {
+    const currentFiles = blocks
+      .filter((block) => block.kind === "current-work")
+      .flatMap((block) => block.files)
+      .map((file) => file.path);
+    const carriedFiles = blocks
+      .filter((block) => block.kind === "carried-work")
+      .flatMap((block) => block.files)
+      .map((file) => file.path);
+    const carriedText = carriedFiles.length > 0
+      ? ` 其中 ${carriedFiles.slice(0, 3).join("、")} 是工作段开始前已有改动，需要单独确认归属。`
+      : "";
+
+    return `这次讲解围绕当前工作段「${activeWorkSegment.title}」。SpecWeft 识别到 ${currentFiles.length || diff.stats.files} 个当前需求相关文件。${carriedText}`;
+  }
+
+  const historicalBlocks = blocks.filter((block) => block.kind === "historical-requirement");
+  if (historicalBlocks.length > 0) {
+    return `没有活跃工作段，SpecWeft 根据历史需求记忆把这次 diff 关联到 ${historicalBlocks.length} 条需求线：${historicalBlocks.map((block) => cleanDigestTitle(block.title)).join("、")}。`;
+  }
+
+  if (groups.length > 1) {
+    return `没有活跃工作段，SpecWeft 先按功能域把 ${diff.stats.files} 个文件拆成 ${groups.length} 组，适合先确认这些组是否属于同一个需求。`;
+  }
+
+  const groupTitle = groups[0]?.title;
+  if (groupTitle) {
+    return `没有活跃工作段，SpecWeft 暂时把这次修改理解为「${cleanDigestTitle(groupTitle)}」这一类需求。`;
+  }
+
+  return `当前 diff 涉及 ${diff.stats.files} 个文件，暂时没有更明确的需求边界。`;
+}
+
+function createDigestOneLineSummary(
+  title: string | undefined,
+  diff: DiffSummary,
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  summary: string,
+): string {
+  if (title?.trim()) {
+    return `本次修改围绕「${title.trim()}」，重点是让讲解先回答需求背景、修改原因和阅读入口。`;
+  }
+
+  const primaryTitle = blocks[0]?.title ?? groups[0]?.title;
+  if (primaryTitle) {
+    const title = cleanDigestTitle(primaryTitle);
+    return `本次主要完成「${title}」相关调整，重点是解释它为什么改、怎么实现、先从哪里读。`;
+  }
+
+  return summary;
+}
+
+function createDigestWhyChanged(
+  title: string | undefined,
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  activeWorkSegment?: WorkSegment,
+): string[] {
+  const reasons: string[] = [];
+
+  if (title?.trim()) {
+    reasons.push(`这次修改围绕「${title.trim()}」，讲解需要先回答需求目标，而不是先堆 diff 细节。`);
+  }
+  if (activeWorkSegment) {
+    reasons.push(`当前需求边界来自工作段「${activeWorkSegment.title}」，讲解会优先围绕这次需求展开。`);
+  } else {
+    reasons.push("当前没有工作段边界，所以需要先用历史记忆、功能域和文件路径推断这次修改属于哪个需求。");
+  }
+
+  for (const block of blocks.slice(0, 3)) {
+    reasons.push(createDigestBlockReason(block));
+    if (block.kind === "carried-work") {
+      reasons.push("有些文件在需求开始前已经处于未提交状态，需要避免把旧改动误认为本次成果。");
+    }
+  }
+
+  for (const group of groups.slice(0, 3)) {
+    reasons.push(createDigestGroupReason(group));
+  }
+
+  return uniqueNonEmpty(reasons).slice(0, 5);
+}
+
+function createDigestImplementationPath(
+  implementationSummary: string[],
+  groups: ReviewChangeGroup[],
+): string[] {
+  const steps: string[] = [];
+
+  for (const group of groups.slice(0, 5)) {
+    if (group.area.startsWith("requirement:") && steps.length > 0) {
+      continue;
+    }
+    steps.push(createDigestGroupImplementation(group));
+  }
+
+  for (const item of implementationSummary) {
+    steps.push(compactDigestSentence(item));
+  }
+
+  return uniqueNonEmpty(steps).slice(0, 6);
+}
+
+function createDigestSections(
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  readingPath: ReviewDraft["reviewDigest"]["readingPath"],
+): ReviewDraft["reviewDigest"]["sections"] {
+  return blocks.slice(0, 6).map((block) => {
+    const matchingGroups = findGroupsForBlock(block, groups);
+    const primaryGroup = matchingGroups[0];
+    const readingEntry = findReadingEntryForBlock(block, readingPath);
+    const validation = block.testSuggestions[0] ?? primaryGroup?.testSuggestions[0];
+
+    return {
+      title: cleanDigestTitle(block.title),
+      kind: block.kind,
+      summary: compactDigestSentence(block.summary),
+      whyChanged: compactDigestSentence(createDigestBlockReason(block)),
+      implementation: compactDigestSentence(primaryGroup
+        ? createDigestGroupImplementation(primaryGroup)
+        : block.reviewFocus[0] ?? block.suggestedAction),
+      readingEntry,
+      validation: validation ? compactDigestSentence(validation) : undefined,
+      confidence: block.confidence,
+    };
+  });
+}
+
+function findReadingEntryForBlock(
+  block: ReviewRequirementBlock,
+  readingPath: ReviewDraft["reviewDigest"]["readingPath"],
+): ReviewDraft["reviewDigest"]["readingPath"][number] | undefined {
+  const files = new Set(block.files.map((file) => file.path));
+  return readingPath.find((item) => files.has(item.path));
+}
+
+function createDigestReadingPath(
+  sourceReadingGuide: ReviewDraft["sourceReadingGuide"],
+  groups: ReviewChangeGroup[],
+): ReviewDraft["reviewDigest"]["readingPath"] {
+  const used = new Set<string>();
+  const items: ReviewDraft["reviewDigest"]["readingPath"] = [];
+
+  for (const item of prioritizeDigestReadingGuide(sourceReadingGuide, groups)) {
+    if (used.has(item.path)) {
+      continue;
+    }
+
+    const group = groups.find((candidate) => candidate.files.some((file) => file.path === item.path));
+    items.push({
+      title: group ? cleanDigestTitle(group.title) : createReadingTitle(item.path),
+      path: item.path,
+      reason: simplifyReadingReason(item.reason, group),
+    });
+    used.add(item.path);
+
+    if (items.length >= 5) {
+      break;
+    }
+  }
+
+  return items;
+}
+
+function prioritizeDigestReadingGuide(
+  sourceReadingGuide: ReviewDraft["sourceReadingGuide"],
+  groups: ReviewChangeGroup[],
+): ReviewDraft["sourceReadingGuide"] {
+  const primaryGroupFiles = groups
+    .slice(0, 4)
+    .flatMap((group) => group.files)
+    .map((file) => file.path);
+  const byPath = new Map(sourceReadingGuide.map((item) => [item.path, item]));
+  const prioritized = primaryGroupFiles
+    .map((filePath) => byPath.get(filePath))
+    .filter((item): item is ReviewDraft["sourceReadingGuide"][number] => item !== undefined);
+
+  return [
+    ...prioritized,
+    ...sourceReadingGuide,
+  ];
+}
+
+function createDigestReviewNotes(
+  reviewWalkthrough: string[],
+  risks: string[],
+  groups: ReviewChangeGroup[],
+): string[] {
+  const notes = [
+    ...groups.flatMap((group) => group.reviewNotes).slice(0, 4),
+    ...risks.filter((risk) => !risk.includes("没有发现明显")).slice(0, 3),
+  ]
+    .filter((item) => !item.includes("这是当前活跃需求"))
+    .map((item) => compactDigestSentence(removeDiffStatText(item)));
+
+  return uniqueNonEmpty(notes).slice(0, 6);
+}
+
+function createDigestValidation(testSuggestions: string[], risks: string[]): string[] {
+  const riskDriven = risks
+    .filter((risk) => !risk.includes("没有发现明显"))
+    .map((risk) => `验证时关注：${compactDigestSentence(risk)}`);
+  return uniqueNonEmpty([...testSuggestions, ...riskDriven].map(compactDigestSentence)).slice(0, 5);
+}
+
+function createDigestConfidence(
+  blocks: ReviewRequirementBlock[],
+  groups: ReviewChangeGroup[],
+  activeWorkSegment?: WorkSegment,
+): Pick<ReviewDraft["reviewDigest"], "confidence" | "confidenceReasons"> {
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (activeWorkSegment) {
+    score += 3;
+    reasons.push(`已检测到工作段「${activeWorkSegment.title}」。`);
+  } else {
+    reasons.push("没有活跃工作段，需求边界需要通过规则推断。");
+  }
+
+  if (blocks.some((block) => block.kind === "current-work")) {
+    score += 2;
+    reasons.push("存在当前需求块。");
+  }
+  if (blocks.some((block) => block.kind === "historical-requirement")) {
+    score += 2;
+    reasons.push("命中了历史需求记忆。");
+  }
+  if (groups.some((group) => group.confidence === "high")) {
+    score += 2;
+    reasons.push("至少一个改动分组置信度较高。");
+  }
+  if (groups.length > 1 && !activeWorkSegment) {
+    score -= 1;
+    reasons.push("同一个 diff 中存在多组改动，建议人工确认是否混入多个需求。");
+  }
+  if (blocks.some((block) => block.kind === "carried-work")) {
+    score -= 1;
+    reasons.push("存在工作段开始前已有改动。");
+  }
+
+  return {
+    confidence: score >= 5 ? "high" : score >= 2 ? "medium" : "low",
+    confidenceReasons: uniqueNonEmpty(reasons).slice(0, 5),
+  };
+}
+
+function cleanDigestTitle(value: string): string {
+  return value
+    .replace(/^当前需求：/, "")
+    .replace(/^旧改动待确认：/, "")
+    .replace(/^候选需求块：/, "")
+    .replace(/^需求：/, "")
+    .replace(/ · .+$/, "")
+    .trim() || value;
+}
+
+function createDigestBlockReason(block: ReviewRequirementBlock): string {
+  const title = cleanDigestTitle(block.title);
+  if (block.kind === "current-work") {
+    return `这组改动属于当前需求「${title}」，应作为本次讲解主线。`;
+  }
+  if (block.kind === "historical-requirement") {
+    return `这组改动命中了历史需求「${title}」，适合沿用这条需求记忆继续复盘。`;
+  }
+  if (block.kind === "carried-work") {
+    return `「${title}」里有工作段开始前已有改动，需要确认是否属于旧需求。`;
+  }
+
+  return `「${title}」是按功能域拆出的候选需求块，需要确认它是否就是本次需求范围。`;
+}
+
+function createDigestGroupReason(group: ReviewChangeGroup): string {
+  const title = cleanDigestTitle(group.title);
+  if (group.area.startsWith("requirement:")) {
+    return `「${title}」和历史需求上下文匹配，所以被放在同一条需求线下解释。`;
+  }
+
+  return `「${title}」负责本次修改中的一个明确功能面，适合单独说明它服务的目的。`;
+}
+
+function createDigestGroupImplementation(group: ReviewChangeGroup): string {
+  const title = cleanDigestTitle(group.title);
+  if (group.area === "review") {
+    return `${title}：把默认讲解从差异清单改成需求上下文摘要，并保留高级详情。`;
+  }
+  if (group.area === "web-ui") {
+    return `${title}：让页面优先展示人能快速理解的讲解摘要，详细拆解折叠到高级区。`;
+  }
+  if (group.area === "cli-runtime") {
+    return `${title}：让终端输出先讲需求、原因、实现路径和阅读入口。`;
+  }
+  if (group.area === "docs") {
+    return `${title}：同步说明新的讲解方式，避免文档继续强调分组审计。`;
+  }
+  if (group.area === "bootstrap") {
+    return `${title}：补齐 Agent 接入模板，让 Codex/Claude 更容易自动调用 SpecWeft。`;
+  }
+  if (group.area.startsWith("requirement:")) {
+    return `${title}：沿用历史需求线记录本次修改，方便后续按需求恢复记忆。`;
+  }
+
+  return `${title}：调整相关实现，让它配合本次需求的默认讲解和记忆流程。`;
+}
+
+function createReadingTitle(filePath: string): string {
+  const area = detectFileArea(filePath);
+  if (area === "runtime code") {
+    return "核心实现模块";
+  }
+  if (area === "test") {
+    return "行为验证模块";
+  }
+  if (area === "config") {
+    return "配置与启动模块";
+  }
+  if (area === "docs") {
+    return "用户说明模块";
+  }
+  return "相关文件";
+}
+
+function simplifyReadingReason(reason: string, group?: ReviewChangeGroup): string {
+  const groupReason = group ? `承载「${cleanDigestTitle(group.title)}」这部分修改，` : "";
+  const simplified = reason
+    .replace(/（[^）]*\）/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/，?\+?\d+\/-\d+。?/g, "")
+    .replace(/^运行时代码入口，先看这里能最快理解/, "适合先理解")
+    .replace(/^测试文件能说明预期行为，适合用来反推/, "适合确认")
+    .replace(/^配置或依赖入口，重点确认/, "适合确认")
+    .replace(/^文档入口，适合确认/, "适合核对")
+    .replace(/^项目文件发生变化，确认/, "适合确认")
+    .trim();
+
+  return compactDigestSentence(`${groupReason}${simplified}`);
+}
+
+function compactDigestSentence(value: string): string {
+  const withoutFileSegment = removeFileSegment(value);
+  const cleaned = withoutFileSegment
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length <= 96) {
+    return cleaned;
+  }
+
+  return `${cleaned.slice(0, 94)}...`;
+}
+
+function removeDiffStatText(value: string): string {
+  return value
+    .replace(/，?\+\d+\/-\d+。?/g, "。")
+    .replace(/: runtime code/g, "")
+    .replace(/: docs/g, "")
+    .replace(/: config/g, "")
+    .replace(/: test/g, "");
+}
+
+function removeFileSegment(value: string): string {
+  const marker = "涉及文件：";
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex === -1) {
+    return value;
+  }
+
+  const before = value.slice(0, markerIndex);
+  const afterMarker = markerIndex + marker.length;
+  const sentenceEnd = value.indexOf("。", afterMarker);
+  if (sentenceEnd === -1) {
+    return before;
+  }
+
+  return `${before}${value.slice(sentenceEnd + 1)}`;
+}
+
+function uniqueNonEmpty(items: string[]): string[] {
+  return [...new Set(items.map((item) => item.trim()).filter(Boolean))];
 }
 
 function createReviewOverviewBatch(
@@ -1600,6 +2201,10 @@ function formatReviewMarkdown(
     "",
     review.summary,
     "",
+    "## Review Digest",
+    "",
+    formatMarkdownReviewDigest(review.reviewDigest),
+    "",
     "## Generation",
     "",
     formatMarkdownList([
@@ -1641,7 +2246,7 @@ function formatReviewMarkdown(
     "",
     formatMarkdownList(review.implementationSummary),
     "",
-    "## Source Reading Guide",
+    "## Advanced Source Details",
     "",
     formatMarkdownSourceReadingGuide(review.sourceReadingGuide),
     "",
@@ -1692,7 +2297,10 @@ export function formatReviewHtml(
 ): string {
   return [
     "<div class=\"specweft-review-report\">",
-    `<section class="specweft-review-hero"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(review.summary)}</p></section>`,
+    `<section class="specweft-review-hero"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(review.reviewDigest.oneLineSummary)}</p></section>`,
+    reviewDigestSection(review.reviewDigest),
+    "<details class=\"specweft-review-details\">",
+    "<summary>高级详情：需要深挖时再展开</summary>",
     `<section><h2>修改意图</h2><p>${escapeHtml(review.intent)}</p></section>`,
     reviewOverviewSection(review.reviewOverview),
     requirementBlocksSection(review.requirementBlocks),
@@ -1724,6 +2332,7 @@ export function formatReviewHtml(
       diff.changedFiles.map((file) => `${file.path} (+${file.additions} / -${file.deletions})`),
     ),
     `<section><h2>新线程提示</h2><p>${escapeHtml(review.nextThreadPrompt)}</p></section>`,
+    "</details>",
     "</div>",
   ].join("");
 }
@@ -1749,6 +2358,42 @@ function formatMarkdownSourceReadingGuide(items: ReviewDraft["sourceReadingGuide
       `  - 绝对路径：${item.absolutePath}`,
     ].join("\n"))
     .join("\n");
+}
+
+function formatMarkdownReviewDigest(digest: ReviewDraft["reviewDigest"]): string {
+  return [
+    `### ${digest.title}`,
+    "",
+    `**需求上下文**：${digest.requirementContext}`,
+    "",
+    `**一句话总结**：${digest.oneLineSummary}`,
+    "",
+    "**需求分块**：",
+    formatMarkdownDigestSections(digest.sections),
+    "",
+    "**为什么这样改**：",
+    formatMarkdownList(digest.whyChanged),
+    "",
+    "**实现思路**：",
+    formatMarkdownList(digest.implementationPath),
+    "",
+    "**阅读入口**：",
+    digest.readingPath.length === 0
+      ? "- None"
+      : digest.readingPath.map((item, index) =>
+          `${index + 1}. ${item.title ? `${item.title}：` : ""}${item.path}，${item.reason}`,
+        ).join("\n"),
+    "",
+    "**注意点**：",
+    formatMarkdownList(digest.reviewNotes),
+    "",
+    "**验证建议**：",
+    formatMarkdownList(digest.validation),
+    "",
+    `**判断置信度**：${formatConfidence(digest.confidence)}`,
+    "",
+    formatMarkdownList(digest.confidenceReasons),
+  ].join("\n");
 }
 
 function formatMarkdownReviewOverview(overview: ReviewDraft["reviewOverview"]): string {
@@ -1785,6 +2430,23 @@ function formatMarkdownReviewOverview(overview: ReviewDraft["reviewOverview"]): 
       ...batch.files.map((file) => `  - ${file.path} (+${file.additions} / -${file.deletions})`),
     ].join("\n")),
   ].join("\n");
+}
+
+function formatMarkdownDigestSections(sections: ReviewDraft["reviewDigest"]["sections"]): string {
+  if (sections.length === 0) {
+    return "- None";
+  }
+
+  return sections.map((section, index) => [
+    `${index + 1}. ${section.title}`,
+    `   - 类型：${BLOCK_KIND_LABELS[section.kind]}`,
+    `   - 摘要：${section.summary}`,
+    `   - 为什么：${section.whyChanged}`,
+    `   - 实现：${section.implementation}`,
+    section.readingEntry ? `   - 阅读入口：${section.readingEntry.path}` : undefined,
+    section.validation ? `   - 验证：${section.validation}` : undefined,
+    `   - 置信度：${formatConfidence(section.confidence)}`,
+  ].filter((item): item is string => item !== undefined).join("\n")).join("\n");
 }
 
 function formatMarkdownRequirementBlocks(blocks: ReviewDraft["requirementBlocks"]): string {
@@ -1837,6 +2499,78 @@ function formatMarkdownChangeGroups(groups: ReviewDraft["changeGroups"]): string
 
 function reviewSection(title: string, items: string[]): string {
   return `<section><h2>${escapeHtml(title)}</h2>${formatHtmlList(items)}</section>`;
+}
+
+function reviewDigestSection(digest: ReviewDraft["reviewDigest"]): string {
+  return [
+    "<section class=\"review-digest\">",
+    `<h2>${escapeHtml(digest.title)}</h2>`,
+    `<p><strong>需求上下文：</strong>${escapeHtml(digest.requirementContext)}</p>`,
+    `<p><strong>一句话总结：</strong>${escapeHtml(digest.oneLineSummary)}</p>`,
+    digestSectionsBlock(digest.sections),
+    "<div class=\"review-digest-grid\">",
+    digestBlock("为什么这样改", digest.whyChanged),
+    digestBlock("实现思路", digest.implementationPath),
+    digestReadingBlock(digest.readingPath),
+    digestBlock("注意点", digest.reviewNotes),
+    digestBlock("验证建议", digest.validation),
+    digestBlock("判断置信度", [
+      formatConfidence(digest.confidence),
+      ...digest.confidenceReasons,
+    ]),
+    "</div>",
+    "</section>",
+  ].join("");
+}
+
+function digestSectionsBlock(sections: ReviewDraft["reviewDigest"]["sections"]): string {
+  if (sections.length === 0) {
+    return "";
+  }
+
+  return [
+    "<div class=\"review-digest-sections\">",
+    "<h3>需求分块</h3>",
+    ...sections.map((section, index) => [
+      "<article>",
+      `<h4>${index + 1}. ${escapeHtml(section.title)}</h4>`,
+      `<p>${escapeHtml(section.summary)}</p>`,
+      "<dl>",
+      `<dt>为什么</dt><dd>${escapeHtml(section.whyChanged)}</dd>`,
+      `<dt>实现</dt><dd>${escapeHtml(section.implementation)}</dd>`,
+      section.readingEntry ? `<dt>入口</dt><dd>${escapeHtml(section.readingEntry.path)}</dd>` : "",
+      section.validation ? `<dt>验证</dt><dd>${escapeHtml(section.validation)}</dd>` : "",
+      `<dt>置信度</dt><dd>${escapeHtml(formatConfidence(section.confidence))}</dd>`,
+      "</dl>",
+      "</article>",
+    ].join("")),
+    "</div>",
+  ].join("");
+}
+
+function digestBlock(title: string, items: string[]): string {
+  return [
+    "<article class=\"review-digest-block\">",
+    `<h3>${escapeHtml(title)}</h3>`,
+    formatHtmlList(items),
+    "</article>",
+  ].join("");
+}
+
+function digestReadingBlock(items: ReviewDraft["reviewDigest"]["readingPath"]): string {
+  return [
+    "<article class=\"review-digest-block\">",
+    "<h3>阅读入口</h3>",
+    items.length === 0
+      ? "<p>None</p>"
+      : `<ol>${items.map((item) => [
+          "<li>",
+          `<strong>${escapeHtml(item.title ? `${item.title}：${item.path}` : item.path)}</strong>`,
+          `<span>${escapeHtml(item.reason)}</span>`,
+          "</li>",
+        ].join("")).join("")}</ol>`,
+    "</article>",
+  ].join("");
 }
 
 function reviewOverviewSection(overview: ReviewDraft["reviewOverview"]): string {
@@ -1945,12 +2679,12 @@ function changeGroupsSection(groups: ReviewDraft["changeGroups"]): string {
 
 function sourceReadingSection(items: ReviewDraft["sourceReadingGuide"]): string {
   if (items.length === 0) {
-    return "<section><h2>源码查看方式</h2><p>None</p></section>";
+    return "<section><h2>高级源码详情</h2><p>None</p></section>";
   }
 
   return [
     "<section>",
-    "<h2>源码查看方式</h2>",
+    "<h2>高级源码详情</h2>",
     "<div class=\"source-reading-list\">",
     items.map((item) => [
       "<article class=\"source-reading-item\">",

@@ -258,6 +258,37 @@ export type ReviewOverview = {
   readingOrder: string[];
 };
 
+export type ReviewDigest = {
+  title: string;
+  requirementContext: string;
+  oneLineSummary: string;
+  sections: Array<{
+    title: string;
+    kind: ReviewRequirementBlock["kind"];
+    summary: string;
+    whyChanged: string;
+    implementation: string;
+    readingEntry?: {
+      title: string;
+      path: string;
+      reason: string;
+    };
+    validation?: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+  whyChanged: string[];
+  implementationPath: string[];
+  readingPath: Array<{
+    title: string;
+    path: string;
+    reason: string;
+  }>;
+  reviewNotes: string[];
+  validation: string[];
+  confidence: "high" | "medium" | "low";
+  confidenceReasons: string[];
+};
+
 export type ReviewDraft = {
   summary: string;
   intent: string;
@@ -266,6 +297,7 @@ export type ReviewDraft = {
   llmReviewNotes?: string[];
   llmModel?: string;
   llmError?: string;
+  reviewDigest: ReviewDigest;
   reviewOverview: ReviewOverview;
   requirementBlocks: ReviewRequirementBlock[];
   changeGroups: ReviewChangeGroup[];
@@ -289,6 +321,27 @@ export type ReviewReport = {
   review: ReviewDraft;
   memory: SessionMemory;
   requirement?: RequirementRecord;
+};
+
+export type AgentReviewPacket = {
+  title: string;
+  requirement?: {
+    id: string;
+    title: string;
+  };
+  digest: ReviewDigest;
+  changedFiles: string[];
+  sourceReading: Array<{
+    path: string;
+    reason: string;
+  }>;
+  suggestedAgentResponse: string;
+  nextActions: string[];
+  advanced: {
+    reportPath?: string;
+    fullReviewAvailable: boolean;
+    omittedPatch: boolean;
+  };
 };
 
 export type SessionMemory = {
@@ -555,8 +608,6 @@ export type TaskCodePointer = {
   matchSource?: "path" | "content" | "path+content" | "memory";
   fileRole?: "runtime" | "ui" | "test" | "docs" | "config" | "memory" | "requirement" | "cli" | "unknown";
   matchedSignals?: string[];
-  preview?: string;
-  startLine?: number;
 };
 
 export type TaskIntentKind = "bugfix" | "feature" | "refactor" | "review" | "test" | "docs" | "config" | "unknown";
@@ -612,6 +663,22 @@ export type TaskExecutionStep = {
   tool?: string;
 };
 
+export type TaskGuardrail = {
+  boundaryRequired: boolean;
+  requirementId?: string;
+  requirementTitle?: string;
+  startWorkSegmentInput: {
+    task: string;
+    title: string;
+    requirementId?: string;
+  };
+  recordCurrentDiffInput: {
+    title: string;
+    requirementId?: string;
+  };
+  finalResponseChecklist: string[];
+};
+
 export type PreparedTask = {
   projectId: string;
   projectName: string;
@@ -629,6 +696,7 @@ export type PreparedTask = {
   memorySuggestions: TaskMemorySuggestion[];
   memoryIndex: MemoryIndex;
   executionPlan: TaskExecutionStep[];
+  guardrail: TaskGuardrail;
   agentInstructions: string;
 };
 
@@ -649,6 +717,23 @@ export type BootstrapSession = {
   }[];
 };
 
+export type AgentHarnessClient = "generic" | "codex" | "claude";
+export type AgentHarnessKind = "skill" | "command" | "prompt";
+
+export type AgentHarnessFile = {
+  client: AgentHarnessClient;
+  kind: AgentHarnessKind;
+  name: string;
+  path: string;
+};
+
+export type AgentHarnessResult = {
+  version: number;
+  files: AgentHarnessFile[];
+  skillNames: string[];
+  commandNames: string[];
+};
+
 export type SpecWeftInitResult = {
   repoPath: string;
   profile: ProjectProfile;
@@ -658,6 +743,7 @@ export type SpecWeftInitResult = {
     skills: ProjectSelectionItem[];
   };
   instructionPaths: string[];
+  harness: AgentHarnessResult;
   bootstrap: BootstrapSession;
   nextCommands: string[];
 };
@@ -666,9 +752,37 @@ export type ProjectStatus = {
   repoPath: string;
   profilePath: string;
   memoryPath: string;
+  memoryProtection: MemoryProtectionStatus;
   projectName: string;
   skills: string[];
   mcps: string[];
+};
+
+export type MemoryProtectionFileStatus = {
+  id: "memory" | "requirements" | "workSegments";
+  label: string;
+  path: string;
+  exists: boolean;
+  encrypted: boolean;
+  algorithm?: string;
+  version?: number;
+};
+
+export type MemoryProtectionStatus = {
+  keyEnv: "SPECWEFT_MEMORY_KEY";
+  keyConfigured: boolean;
+  protectedFiles: number;
+  plaintextFiles: number;
+  missingFiles: number;
+  files: MemoryProtectionFileStatus[];
+  warnings: string[];
+  summary: string;
+};
+
+export type MemoryProtectionResult = MemoryProtectionStatus & {
+  migratedFiles: string[];
+  createdFiles: string[];
+  skippedFiles: string[];
 };
 
 export type RegisteredProject = {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -18,6 +19,7 @@ import {
   createReviewReport,
   createRuntimeAssembly,
   createWorkSegmentStatus,
+  getMemoryProtectionStatus,
   getRecordingStatus,
   disableProjectMcp,
   disableProjectSkill,
@@ -108,6 +110,7 @@ type WorkSegmentBody = {
 };
 
 const app = new Hono();
+const LOCAL_WEB_HOST = "127.0.0.1";
 let options: WebOptions = {
   repoPath: resolveWebRepoPath("."),
   port: 4177,
@@ -118,7 +121,7 @@ app.get("/", async (context) => {
   const requestedRepo = context.req.query("repo");
   const registry = await listRegisteredProjects();
   const repoPath = requestedRepo
-    ? resolveRequestRepo(requestedRepo)
+    ? await resolveRequestRepo(requestedRepo)
     : registry.activeProjectPath ?? options.repoPath;
   return context.html(renderApp(repoPath));
 });
@@ -129,19 +132,19 @@ app.get("/api/projects", async (context) => {
 
 app.post("/api/projects/register", async (context) => {
   const body = await readJsonBody<ProjectBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath, { allowUnregistered: true });
   await ensureWebProjectReady(repoPath);
   return context.json(await registerProject(repoPath));
 });
 
 app.post("/api/projects/active", async (context) => {
   const body = await readJsonBody<ProjectBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   return context.json(await setActiveProject(repoPath));
 });
 
 app.get("/api/dashboard", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   await ensureWebProjectReady(repoPath);
 
   const [profile, assembly, mcpInspect] = await Promise.all([
@@ -156,11 +159,14 @@ app.get("/api/dashboard", async (context) => {
     createMemoryTimeline(repoPath, profile),
     getRecordingStatus(repoPath),
   ]);
-  const workSegments = await createWorkSegmentStatus(repoPath, profile);
-  const memoryDigest = await createMemoryDigest(repoPath, profile);
-  const requirementDossier = await createRequirementDossier(repoPath, profile, {
-    sessionPreviewLimit: 3,
-  });
+  const [workSegments, memoryDigest, requirementDossier, memoryProtection] = await Promise.all([
+    createWorkSegmentStatus(repoPath, profile),
+    createMemoryDigest(repoPath, profile),
+    createRequirementDossier(repoPath, profile, {
+      sessionPreviewLimit: 3,
+    }),
+    getMemoryProtectionStatus(repoPath),
+  ]);
   const llmConfig = createLlmConfigStatus();
 
   return context.json({
@@ -171,6 +177,7 @@ app.get("/api/dashboard", async (context) => {
     timeline,
     memoryDigest,
     requirementDossier,
+    memoryProtection,
     recordingStatus,
     workSegments,
     llmConfig,
@@ -180,14 +187,14 @@ app.get("/api/dashboard", async (context) => {
 });
 
 app.get("/api/bootstrap", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
   return context.json(await createBootstrapSession(repoPath, keyword));
 });
 
 app.post("/api/prepare", async (context) => {
   const body = await readJsonBody<PrepareBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
 
   if (!body.task?.trim()) {
     return context.json({ error: "Task is required." }, 400);
@@ -197,19 +204,19 @@ app.post("/api/prepare", async (context) => {
 });
 
 app.get("/api/memory-index", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const profile = await scanProject(repoPath);
   return context.json(await createMemoryIndex(repoPath, profile));
 });
 
 app.get("/api/memory-digest", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const profile = await scanProject(repoPath);
   return context.json(await createMemoryDigest(repoPath, profile));
 });
 
 app.get("/api/requirement-dossier", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const full = parseBooleanQuery(context.req.query("full"));
   const profile = await scanProject(repoPath);
   return context.json(await createRequirementDossier(repoPath, profile, {
@@ -220,7 +227,7 @@ app.get("/api/requirement-dossier", async (context) => {
 
 app.post("/api/restore-requirement", async (context) => {
   const body = await readJsonBody<PrepareBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
   const requirement = await resolveApiRequirement(repoPath, body.requirementId);
 
@@ -232,7 +239,7 @@ app.post("/api/restore-requirement", async (context) => {
 
 app.post("/api/task-skills", async (context) => {
   const body = await readJsonBody<PrepareBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
 
   if (!body.task?.trim()) {
     return context.json({ error: "Task is required." }, 400);
@@ -246,7 +253,7 @@ app.post("/api/task-skills", async (context) => {
 });
 
 app.get("/api/marketplace/skills", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
   const profile = await scanProject(repoPath);
   const recommendations = await recommendForProject(profile, repoPath);
@@ -257,7 +264,7 @@ app.get("/api/marketplace/skills", async (context) => {
 
 app.post("/api/marketplace/skills/apply", async (context) => {
   const body = await readJsonBody<MarketplaceSkillBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
 
   if (!body.skill) {
     return context.json({ error: "Marketplace Skill is required." }, 400);
@@ -284,7 +291,7 @@ app.post("/api/marketplace/skills/preview", async (context) => {
 });
 
 app.get("/api/marketplace/mcps", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
   const requirement = context.req.query("requirement")?.trim();
   const profile = await scanProject(repoPath);
@@ -297,7 +304,7 @@ app.get("/api/marketplace/mcps", async (context) => {
 
 app.post("/api/marketplace/mcps/apply", async (context) => {
   const body = await readJsonBody<MarketplaceMcpBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
 
   if (!body.mcp) {
     return context.json({ error: "Marketplace MCP is required." }, 400);
@@ -319,30 +326,30 @@ app.post("/api/pool/init", async (context) => {
 });
 
 app.get("/api/requirements", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   return context.json(await listRequirements(repoPath));
 });
 
 app.get("/api/timeline", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const profile = await scanProject(repoPath);
   return context.json(await createMemoryTimeline(repoPath, profile));
 });
 
 app.get("/api/recording-status", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   return context.json(await getRecordingStatus(repoPath));
 });
 
 app.get("/api/work-segments", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const profile = await scanProject(repoPath);
   return context.json(await createWorkSegmentStatus(repoPath, profile));
 });
 
 app.post("/api/work-segments/start", async (context) => {
   const body = await readJsonBody<WorkSegmentBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
   const requirement = body.requirementId?.trim()
     ? await resolveApiRequirement(repoPath, body.requirementId)
@@ -362,7 +369,7 @@ app.post("/api/work-segments/start", async (context) => {
 
 app.post("/api/work-segments/complete", async (context) => {
   const body = await readJsonBody<WorkSegmentBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   return context.json({
     segment: await completeWorkSegment(repoPath, {
       segmentId: body.segmentId,
@@ -375,7 +382,7 @@ app.post("/api/work-segments/complete", async (context) => {
 
 app.post("/api/requirements", async (context) => {
   const body = await readJsonBody<RequirementBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
 
   if (!body.title?.trim()) {
@@ -392,18 +399,18 @@ app.post("/api/requirements", async (context) => {
 
 app.post("/api/requirements/active", async (context) => {
   const body = await readJsonBody<RequirementBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const id = assertId(body.id);
   return context.json(await setActiveRequirement(repoPath, id));
 });
 
 app.get("/api/assembly", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   return context.json(await createRuntimeAssembly(repoPath));
 });
 
 app.get("/api/mcp-inspect", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   return context.json(await createMcpInspect(repoPath));
 });
 
@@ -425,7 +432,7 @@ app.get("/api/skills/:id", async (context) => {
 app.post("/api/selection/:action", async (context) => {
   const action = context.req.param("action");
   const body = await readJsonBody<SelectionBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const type = assertSelectionType(body.type);
   const id = assertId(body.id);
 
@@ -453,7 +460,7 @@ app.post("/api/selection/:action", async (context) => {
 
 app.post("/api/review", async (context) => {
   const body = await readJsonBody<ReviewBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
   const report = await createReviewReport(repoPath, profile, body.title, 7, body.requirementId);
 
@@ -473,7 +480,7 @@ app.post("/api/review", async (context) => {
 
 app.post("/api/record-current-diff", async (context) => {
   const body = await readJsonBody<ReviewBody>(context);
-  const repoPath = resolveRequestRepo(body.repoPath);
+  const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
   const report = await createReviewReport(repoPath, profile, body.title, 7, body.requirementId);
 
@@ -493,7 +500,7 @@ app.post("/api/record-current-diff", async (context) => {
 });
 
 app.get("/api/recall", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
   const requirementId = context.req.query("requirementId")?.trim();
   if (!keyword) {
@@ -507,7 +514,7 @@ app.get("/api/recall", async (context) => {
 });
 
 app.get("/api/handoff", async (context) => {
-  const repoPath = resolveRequestRepo(context.req.query("repo"));
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
   const profile = await scanProject(repoPath);
   const requirement = keyword ? undefined : await getActiveRequirement(repoPath);
@@ -529,7 +536,7 @@ app.onError((error, context) => {
 
 export async function startWebServer(webOptions: WebOptions): Promise<void> {
   options = {
-    repoPath: resolveWebRepoPath(webOptions.repoPath),
+    repoPath: await normalizeRepoPath(resolveWebRepoPath(webOptions.repoPath)),
     port: webOptions.port,
   };
   await ensureWebProjectReady(options.repoPath);
@@ -591,12 +598,17 @@ async function readJsonBody<T>(context: Context): Promise<T> {
   }
 }
 
-function resolveRequestRepo(repoPath?: string): string {
+async function resolveRequestRepo(repoPath?: string, opts: { allowUnregistered?: boolean } = {}): Promise<string> {
   if (!repoPath?.trim()) {
     return options.repoPath;
   }
 
-  return resolveWebRepoPath(repoPath);
+  const resolved = await normalizeRepoPath(resolveWebRepoPath(repoPath));
+  if (opts.allowUnregistered) {
+    return resolved;
+  }
+
+  return assertKnownRepoPath(resolved);
 }
 
 class BadRequestError extends Error {}
@@ -611,10 +623,37 @@ function resolveWebRepoPath(repoPath: string): string {
   return path.resolve(process.env.INIT_CWD ?? process.cwd(), repoPath);
 }
 
+async function normalizeRepoPath(repoPath: string): Promise<string> {
+  try {
+    return await realpath(repoPath);
+  } catch {
+    return repoPath;
+  }
+}
+
 async function ensureWebProjectReady(repoPath: string): Promise<void> {
   await initializeGlobalPools();
   await initializeProject(repoPath);
   await registerProject(repoPath);
+}
+
+async function assertKnownRepoPath(repoPath: string): Promise<string> {
+  const resolved = await normalizeRepoPath(resolveWebRepoPath(repoPath));
+  const optionRepo = await normalizeRepoPath(options.repoPath);
+  if (resolved === optionRepo) {
+    return resolved;
+  }
+
+  const registry = await listRegisteredProjects();
+  const activeProjectPath = registry.activeProjectPath
+    ? await normalizeRepoPath(registry.activeProjectPath)
+    : undefined;
+  const projectPaths = await Promise.all(registry.projects.map((project) => normalizeRepoPath(project.rootPath)));
+  if (activeProjectPath === resolved || projectPaths.includes(resolved)) {
+    return resolved;
+  }
+
+  throw new BadRequestError("Project is not registered in this SpecWeft Web session. Register it from the Projects view first.");
 }
 
 function assertSelectionType(value: SelectionBody["type"]): "mcp" | "skill" {
@@ -662,8 +701,8 @@ function createMcpInspect(repoPath: string) {
       "新线程开始时调用 specweft.bootstrap_session。",
       "用户提出代码需求后，先调用 specweft.prepare_task。",
       "如命中历史需求，只调用 specweft.restore_requirement 恢复相关记忆。",
-      "修改前调用 specweft.start_work_segment，给本次需求留下边界。",
-      "修改后调用 specweft.record_current_diff，生成讲解、关闭工作段并保存记忆。",
+      "修改前用 prepare_task.guardrail.startWorkSegmentInput 调用 specweft.start_work_segment。",
+      "修改后用 prepare_task.guardrail.recordCurrentDiffInput 调用 specweft.record_current_diff，并用 agentReview.suggestedAgentResponse 回复用户。",
       "MCP/Skill 推荐只作为候选，遇到凭证、数据库、网络权限时必须让用户确认。",
     ],
   };
@@ -729,10 +768,11 @@ async function startServer(port: number, attempt = 0): Promise<void> {
   const server = serve(
     {
       fetch: app.fetch,
+      hostname: LOCAL_WEB_HOST,
       port,
     },
     (info) => {
-      process.stdout.write(`SpecWeft Web UI: http://localhost:${info.port}\n`);
+      process.stdout.write(`SpecWeft Web UI: http://${LOCAL_WEB_HOST}:${info.port}\n`);
     },
   ) as Server;
 

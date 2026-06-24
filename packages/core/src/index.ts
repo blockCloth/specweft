@@ -14,6 +14,7 @@ export type {
   MemoryIndexItem,
   ProjectProfile,
   PoolInitResult,
+  AgentReviewPacket,
   ReviewDraft,
   ReviewOverview,
   ReviewOverviewBatch,
@@ -23,6 +24,7 @@ export type {
   SourceReadingItem,
   RecordingStatus,
   PreparedTask,
+  ReviewDigest,
   RequirementRestore,
   RequirementTimelineItem,
   RegistryFile,
@@ -37,6 +39,9 @@ export type {
   SkillRegistryItem,
   ToolRecommendation,
   ProjectStatus,
+  MemoryProtectionFileStatus,
+  MemoryProtectionResult,
+  MemoryProtectionStatus,
   RegisteredProject,
   ProjectRegistryFile,
   RequirementFile,
@@ -66,6 +71,10 @@ export type {
   MarketplaceMcpSearchResult,
   MemoryHandoff,
   BootstrapSession,
+  AgentHarnessClient,
+  AgentHarnessFile,
+  AgentHarnessKind,
+  AgentHarnessResult,
   SpecWeftInitResult,
   CapabilityCenter,
   CapabilityKind,
@@ -78,6 +87,10 @@ export {
   createBootstrapSession,
   initializeSpecWeftProject,
 } from "./bootstrap/bootstrap-session.js";
+export {
+  createHarnessTemplates,
+  writeAgentHarness,
+} from "./harness/agent-harness.js";
 export { initializeProject, scanProject } from "./scanner/project-scanner.js";
 export { createCapabilityCenter } from "./capabilities/capability-center.js";
 export {
@@ -105,6 +118,7 @@ export {
 } from "./marketplace/mcp-marketplace.js";
 export {
   analyzeCurrentDiff,
+  createAgentReviewPacket,
   createReviewDraft,
   createReviewReport,
 } from "./diff/diff-analyzer.js";
@@ -136,6 +150,10 @@ export {
 export { createMemoryTimeline } from "./memory/memory-timeline.js";
 export { getRecordingStatus } from "./recording/recording-status.js";
 export { currentProjectStatus } from "./status/project-status.js";
+export {
+  getMemoryProtectionStatus,
+  protectMemoryFiles,
+} from "./security/memory-protection.js";
 export {
   SPECWEFT_MCP_TOOL_NAMES,
   type SpecWeftMcpToolName,

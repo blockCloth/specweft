@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -33,6 +33,10 @@ await writeFile(
   "utf-8",
 );
 await writeFile(path.join(projectDir, "login.ts"), "export const login = 'old';\n", "utf-8");
+const otherProjectDir = path.join(workspaceDir, "unregistered-project");
+await mkdir(otherProjectDir, { recursive: true });
+await writeFile(path.join(otherProjectDir, "package.json"), JSON.stringify({ name: "unregistered-project" }, null, 2), "utf-8");
+const realOtherProjectDir = await realpath(otherProjectDir);
 await execFileAsync("git", ["init"], { cwd: projectDir, env });
 await execFileAsync("git", ["config", "user.email", "specweft@example.com"], { cwd: projectDir, env });
 await execFileAsync("git", ["config", "user.name", "SpecWeft"], { cwd: projectDir, env });
@@ -52,6 +56,21 @@ const server = spawn(
 try {
   await waitForJson(`/api/bootstrap?repo=${encodeURIComponent(projectDir)}`);
 
+  await assertHttpError(
+    `/api/dashboard?repo=${encodeURIComponent(otherProjectDir)}`,
+    { method: "GET" },
+    400,
+    "Project is not registered",
+  );
+
+  const registered = await postJson("/api/projects/register", {
+    repoPath: otherProjectDir,
+  });
+  assertTruthy(
+    registered.projects.some((project) => project.rootPath === realOtherProjectDir),
+    "projects/register should explicitly allow adding a new project",
+  );
+
   const dashboard = await getJson(`/api/dashboard?repo=${encodeURIComponent(projectDir)}`);
   assertEqual(dashboard.profile.name, "web-api-smoke-demo", "dashboard should load the requested project profile");
   assertTruthy(dashboard.mcpInspect.tools.includes("specweft.prepare_task"), "dashboard should include MCP inspect metadata");
@@ -69,6 +88,8 @@ try {
     task: "帮我优化登录提示",
   });
   assertTruthy(prepared.executionPlan.some((item) => item.tool === "specweft.start_work_segment"), "prepare should include start_work_segment");
+  assertTruthy(prepared.guardrail.boundaryRequired, "prepare should include an agent boundary guardrail");
+  assertEqual(prepared.guardrail.startWorkSegmentInput.task, "帮我优化登录提示", "guardrail should preserve the original task for start_work_segment");
   assertTruthy(prepared.skillSuggestions.length > 0, "prepare should recommend task Skills");
 
   const segment = await postJson("/api/work-segments/start", {
@@ -86,6 +107,14 @@ try {
     requirementId: requirement.id,
   });
   assertEqual(review.title, "登录提示优化", "review should use the active work segment title when title is omitted");
+  assertEqual(review.review.reviewDigest.title, "登录提示优化", "review digest should use the requirement title");
+  assertTruthy(review.review.reviewDigest.oneLineSummary.includes("本次修改围绕"), "review digest should include a context-first summary");
+  assertTruthy(review.review.reviewDigest.sections.length > 0, "review digest should expose requirement sections");
+  assertTruthy(
+    review.review.reviewDigest.sections.some((section) => section.readingEntry?.path === "login.ts"),
+    "review digest sections should include reading entries",
+  );
+  assertTruthy(review.review.reviewDigest.readingPath.some((item) => item.path === "login.ts"), "review digest should include read-first source entries");
   assertTruthy(review.review.reviewOverview.batches.length > 0, "review should expose overview batches");
   assertTruthy(
     review.review.reviewOverview.batches.some((batch) => batch.title.includes("登录提示优化")),

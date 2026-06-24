@@ -9,6 +9,7 @@ import type {
   TaskAnalysis,
   TaskCodePointer,
   TaskExecutionStep,
+  TaskGuardrail,
   TaskMemorySuggestion,
   TaskSkillSuggestion,
   ToolRecommendation,
@@ -158,6 +159,7 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
     memorySuggestions,
     matchedRequirement,
   });
+  const guardrail = createTaskGuardrail(userInput, matchedRequirement);
 
   return {
     projectId: profile.id,
@@ -176,6 +178,7 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
     memorySuggestions,
     memoryIndex,
     executionPlan,
+    guardrail,
     agentInstructions: createAgentInstructions({
       profile,
       userInput,
@@ -186,6 +189,7 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
       matchedRequirement,
       handoffSummary: handoff?.summary,
       executionPlan,
+      guardrail,
     }),
   };
 }
@@ -348,8 +352,6 @@ async function locateRelatedFiles(
       matchSource: item.matchSource,
       fileRole: item.fileRole,
       matchedSignals: item.matchedSignals,
-      preview: item.preview,
-      startLine: item.startLine,
     }));
 }
 
@@ -679,7 +681,7 @@ function createExecutionPlan(input: {
     const strongest = input.codePointers[0];
     steps.push({
       title: "先读相关源码",
-      action: `Inspect ${input.codePointers.slice(0, 4).map(formatCodePointerAction).join("; ")}`,
+      action: `Inspect ${input.codePointers.slice(0, 4).map((item) => item.path).join("; ")}`,
       reason: strongest
         ? `最高命中文件来自 ${strongest.matchSource ?? "path"}：${strongest.reason}`
         : "这些文件和需求关键词最接近，先读它们再决定修改范围。",
@@ -720,6 +722,51 @@ function createExecutionPlan(input: {
   }));
 }
 
+function createTaskGuardrail(
+  userInput: string,
+  matchedRequirement: PreparedTaskRequirementMatch | null,
+): TaskGuardrail {
+  const title = createTaskTitle(userInput, matchedRequirement);
+  const requirementId = matchedRequirement?.requirementId;
+
+  return {
+    boundaryRequired: true,
+    requirementId,
+    requirementTitle: matchedRequirement?.title,
+    startWorkSegmentInput: {
+      task: userInput.trim() || title,
+      title,
+      requirementId,
+    },
+    recordCurrentDiffInput: {
+      title,
+      requirementId,
+    },
+    finalResponseChecklist: [
+      "说明本次需求上下文和为什么这样改。",
+      "引用 record_current_diff 返回的 agentReview.suggestedAgentResponse，而不是完整 advancedReview。",
+      "列出建议先看的源码入口和最小验证方式。",
+      "如果没有调用 start_work_segment，先说明需求边界可能不准，并尽快补调用。",
+    ],
+  };
+}
+
+function createTaskTitle(
+  userInput: string,
+  matchedRequirement: PreparedTaskRequirementMatch | null,
+): string {
+  if (matchedRequirement?.title.trim()) {
+    return matchedRequirement.title.trim();
+  }
+
+  const normalized = userInput.trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "SpecWeft coding task";
+  }
+
+  return normalized.length <= 42 ? normalized : `${normalized.slice(0, 40)}...`;
+}
+
 function createAgentInstructions(input: {
   profile: ProjectProfile;
   userInput: string;
@@ -730,6 +777,7 @@ function createAgentInstructions(input: {
   matchedRequirement: PreparedTaskRequirementMatch | null;
   handoffSummary?: string;
   executionPlan: TaskExecutionStep[];
+  guardrail: TaskGuardrail;
 }): string {
   const fileText = input.codePointers.length
     ? input.codePointers.map((item) => item.path).join(", ")
@@ -755,15 +803,13 @@ function createAgentInstructions(input: {
     `Use or consider Skills: ${skillText}`,
     `Relevant memory: ${memoryText}`,
     `Matched requirement: ${requirementText}`,
+    `Guardrail startWorkSegmentInput: ${JSON.stringify(input.guardrail.startWorkSegmentInput)}`,
+    `Guardrail recordCurrentDiffInput: ${JSON.stringify(input.guardrail.recordCurrentDiffInput)}`,
     `Execution plan:\n${planText}`,
     input.handoffSummary ? `Restored context summary: ${input.handoffSummary}` : undefined,
     "If missingQuestions is not empty, ask the user before editing unless the answer is obvious from the repository.",
-    input.matchedRequirement
-      ? `Before edits, call specweft.start_work_segment with requirementId=${input.matchedRequirement.requirementId} so this request has a clear local boundary.`
-      : "Before edits, call specweft.start_work_segment so this request has a clear local boundary.",
-    input.matchedRequirement
-      ? `After edits, call specweft.record_current_diff with requirementId=${input.matchedRequirement.requirementId} and include the generated explanation in the final response.`
-      : "After edits, call specweft.record_current_diff and include the generated explanation in the final response.",
+    "Before edits, call specweft.start_work_segment with guardrail.startWorkSegmentInput.",
+    "After edits, call specweft.record_current_diff with guardrail.recordCurrentDiffInput and use agentReview.suggestedAgentResponse in the final response.",
   ].filter(Boolean).join("\n");
 }
 
@@ -806,11 +852,6 @@ function createRequirementMatchFromMemory(
 
 function escapeToolString(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
-}
-
-function formatCodePointerAction(item: TaskCodePointer): string {
-  const line = item.startLine ? `:${item.startLine}` : "";
-  return `${item.path}${line}`;
 }
 
 function createSkillTaskReason(
@@ -1032,8 +1073,7 @@ function createMatchSource(pathScore: number, contentScore: number): NonNullable
 
 function createCodePointerReason(item: ScoredCandidateFile): string {
   const signals = item.matchedSignals.length ? item.matchedSignals.join(", ") : "no explicit signal";
-  const preview = item.preview ? ` Preview line ${item.startLine ?? "?"}: ${item.preview}` : "";
-  return `Matched by ${item.matchSource}; file role=${item.fileRole}. Signals: ${signals}.${preview}`;
+  return `Matched by ${item.matchSource}; file role=${item.fileRole}. Signals: ${signals}.`;
 }
 
 function detectFileRole(filePath: string): NonNullable<TaskCodePointer["fileRole"]> {

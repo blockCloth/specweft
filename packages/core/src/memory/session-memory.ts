@@ -12,8 +12,8 @@ import type {
   SessionMemory,
 } from "../schemas/types.js";
 import { projectConfigDir } from "../utils/path.js";
-import { readJsonFile, writeJsonFile } from "../utils/json.js";
 import { evaluateCodeSnapshot } from "../git/change-snapshot.js";
+import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
 
 type MemoryFile = {
   sessions: SessionMemory[];
@@ -190,14 +190,14 @@ export async function createMemoryHandoff(
 
 async function readMemoryFile(repoPath: string): Promise<MemoryFile> {
   return (
-    (await readJsonFile<MemoryFile>(memoryPath(repoPath))) ?? {
+    (await readSecureJsonFile<MemoryFile>(memoryPath(repoPath))) ?? {
       sessions: [],
     }
   );
 }
 
 async function writeMemoryFile(repoPath: string, memoryFile: MemoryFile): Promise<void> {
-  await writeJsonFile(memoryPath(repoPath), memoryFile);
+  await writeSecureJsonFile(memoryPath(repoPath), memoryFile);
 }
 
 function memoryPath(repoPath: string): string {

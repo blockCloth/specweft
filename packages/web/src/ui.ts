@@ -685,6 +685,29 @@ export function renderApp(repoPath: string): string {
         font-weight: 650;
       }
 
+      .mini-table {
+        display: grid;
+        gap: 6px;
+        margin: 10px 0;
+      }
+
+      .mini-table > div {
+        display: grid;
+        grid-template-columns: minmax(120px, 0.8fr) minmax(80px, 0.45fr) minmax(0, 1.8fr);
+        gap: 8px;
+        align-items: start;
+        padding: 9px 10px;
+        border: 1px solid rgba(121, 169, 237, 0.15);
+        border-radius: var(--radius);
+        background: rgba(248, 251, 255, 0.68);
+        font-size: 12px;
+      }
+
+      .mini-table span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
       .plain-list {
         margin: 0;
         padding-left: 18px;
@@ -709,6 +732,89 @@ export function renderApp(repoPath: string): string {
       .review-report {
         display: grid;
         gap: 12px;
+      }
+
+      .review-digest-card {
+        display: grid;
+        gap: 14px;
+        border-color: rgba(37, 99, 235, 0.18);
+        background: rgba(250, 253, 255, 0.78);
+      }
+
+      .review-digest-heading {
+        display: grid;
+        gap: 8px;
+      }
+
+      .review-digest-heading h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .review-digest-heading p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .review-digest-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .review-section-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .review-section-item {
+        padding: 12px;
+        border: 1px solid rgba(121, 169, 237, 0.16);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.58);
+      }
+
+      .review-section-item h3 {
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+
+      .review-section-item p {
+        margin: 0 0 8px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .review-digest-block {
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid rgba(121, 169, 237, 0.16);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.62);
+      }
+
+      .review-digest-block h3 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+
+      .review-digest-block p,
+      .review-digest-block li {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .review-reading-list {
+        margin: 0;
+        padding-left: 20px;
+        line-height: 1.7;
+      }
+
+      .review-reading-list strong,
+      .review-reading-list span {
+        display: block;
+        overflow-wrap: anywhere;
       }
 
       .specweft-review-report {
@@ -775,6 +881,26 @@ export function renderApp(repoPath: string): string {
       .specweft-review-hero {
         border-color: rgba(37, 99, 235, 0.18);
         background: rgba(238, 244, 255, 0.78);
+      }
+
+      .specweft-review-details {
+        display: grid;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid rgba(121, 169, 237, 0.16);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      .specweft-review-details summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-weight: 720;
+      }
+
+      .specweft-review-details[open] summary {
+        margin-bottom: 10px;
+        color: var(--text);
       }
 
       .review-batch-list {
@@ -1144,6 +1270,7 @@ export function renderApp(repoPath: string): string {
                 <button id="handoffButton" class="btn primary" data-i18n="createHandoff">生成交接上下文</button>
               </div>
             </div>
+            <div id="memoryProtectionOutput" class="result-view"></div>
             <div id="requirementDossierOutput" class="result-view"></div>
             <div id="workSegmentMemoryOutput" class="result-view"></div>
             <div id="memoryDigestOutput" class="result-view"></div>
@@ -1220,7 +1347,6 @@ export function renderApp(repoPath: string): string {
           suggestedSearches: "建议搜索词",
           matchSource: "匹配来源",
           fileRole: "文件角色",
-          codePreview: "源码摘录",
           clarifiedGoal: "补全后的目标",
           missingQuestions: "需要补充的问题",
           acceptanceCriteria: "验收标准",
@@ -1232,6 +1358,11 @@ export function renderApp(repoPath: string): string {
           memorySuggestions: "相关记忆",
           executionPlan: "执行路线",
           noExecutionPlan: "还没有生成执行路线。",
+          agentGuardrail: "Agent 护栏",
+          boundaryRequired: "需要工作段边界",
+          startWorkSegmentInput: "开始工作段参数",
+          recordCurrentDiffInput: "记录 diff 参数",
+          finalResponseChecklist: "最终回复检查",
           agentInstructions: "Agent 执行建议",
           noPreparedTaskYet: "还没有准备任务上下文。",
           noCodePointers: "暂时没有强相关文件。",
@@ -1326,12 +1457,26 @@ export function renderApp(repoPath: string): string {
           review: "代码讲解",
           reviewTitlePlaceholder: "代码讲解标题",
           createReview: "生成讲解",
+          reviewDigest: "讲解摘要",
+          requirementContext: "需求上下文",
+          oneLineSummary: "一句话总结",
+          whyChanged: "为什么这样改",
+          implementationPath: "实现思路",
+          readingPath: "阅读入口",
+          reviewNotes: "注意点",
+          validation: "验证建议",
+          requirementSections: "需求分块",
+          sectionWhy: "为什么",
+          sectionImplementation: "实现",
+          sectionEntry: "入口",
+          confidenceReasons: "判断依据",
+          advancedReviewDetails: "高级详情：需要深挖时再展开",
           reviewOverview: "本次修改概览",
           reviewOverviewBatches: "修改批次",
           reviewOverviewReadingOrder: "概览阅读顺序",
           reviewBatchSourceGroups: "关联分组",
           implementationSummary: "实现内容总结",
-          sourceReadingGuide: "源码查看方式",
+          sourceReadingGuide: "高级源码详情",
           reviewWalkthrough: "建议阅读顺序",
           risks: "风险提示",
           testSuggestions: "测试建议",
@@ -1375,12 +1520,24 @@ export function renderApp(repoPath: string): string {
           llmReviewConfig: "LLM 讲解配置",
           llmEnabled: "已启用",
           llmDisabled: "未启用",
+          memoryProtection: "需求记忆保护",
+          keyConfigured: "密钥状态",
+          keyEnv: "密钥变量",
+          detected: "已检测到",
+          encrypted: "已加密",
+          plaintext: "明文",
+          missing: "缺失",
+          encryptedFiles: "已加密文件",
+          plaintextFiles: "明文文件",
+          missingFiles: "缺失文件",
+          noProtectionWarnings: "暂无保护提醒。",
+          memoryProtectionHint: "如需加密需求记忆，设置 SPECWEFT_MEMORY_KEY 后运行 specweft protect。报告 Markdown 仍保持明文，方便人工 review。",
           model: "模型",
           baseUrl: "Base URL",
           maxDiffChars: "最大 diff 字符数",
           apiKeyEnv: "密钥环境变量",
           notDetected: "未检测到",
-          llmConfigHint: "SpecWeft 只检测环境变量是否存在，不会在界面展示密钥。设置 SPECWEFT_LLM_API_KEY 后，review 会在规则讲解基础上追加 LLM 总结。",
+          llmConfigHint: "SpecWeft 只检测环境变量是否存在，不会在界面展示密钥。设置 SPECWEFT_LLM_API_KEY 后，review 会在规则讲解基础上追加 LLM 总结；远程调用默认 15 秒超时，可用 SPECWEFT_LLM_TIMEOUT_MS 调整。",
           idle: "空闲",
           loading: "加载中",
           ready: "就绪",
@@ -1436,7 +1593,8 @@ export function renderApp(repoPath: string): string {
           noSkillDetailYet: "选择一个 Skill 查看具体内容。",
           noRuntimeYet: "暂无运行配置。",
           noConnectYet: "暂无接入配置。",
-          noLlmConfigYet: "暂无 LLM 配置状态。"
+          noLlmConfigYet: "暂无 LLM 配置状态。",
+          noMemoryProtectionYet: "暂无记忆保护状态。"
         },
         "en-US": {
           brandSubtitle: "Local agent console",
@@ -1492,7 +1650,6 @@ export function renderApp(repoPath: string): string {
           suggestedSearches: "Suggested searches",
           matchSource: "Match source",
           fileRole: "File role",
-          codePreview: "Code preview",
           clarifiedGoal: "Clarified goal",
           missingQuestions: "Missing questions",
           acceptanceCriteria: "Acceptance criteria",
@@ -1504,6 +1661,11 @@ export function renderApp(repoPath: string): string {
           memorySuggestions: "Relevant memory",
           executionPlan: "Execution Plan",
           noExecutionPlan: "No execution plan was generated.",
+          agentGuardrail: "Agent Guardrail",
+          boundaryRequired: "Boundary required",
+          startWorkSegmentInput: "Start work segment input",
+          recordCurrentDiffInput: "Record current diff input",
+          finalResponseChecklist: "Final response checklist",
           agentInstructions: "Agent instructions",
           noPreparedTaskYet: "No prepared task context yet.",
           noCodePointers: "No strong related file yet.",
@@ -1598,12 +1760,26 @@ export function renderApp(repoPath: string): string {
           review: "Review",
           reviewTitlePlaceholder: "Review title",
           createReview: "Create Review",
+          reviewDigest: "Review Digest",
+          requirementContext: "Requirement Context",
+          oneLineSummary: "One-line Summary",
+          whyChanged: "Why It Changed",
+          implementationPath: "Implementation Approach",
+          readingPath: "Reading Entry",
+          reviewNotes: "Notes",
+          validation: "Validation",
+          requirementSections: "Requirement Sections",
+          sectionWhy: "Why",
+          sectionImplementation: "Implementation",
+          sectionEntry: "Entry",
+          confidenceReasons: "Confidence Reasons",
+          advancedReviewDetails: "Advanced details",
           reviewOverview: "Review Overview",
           reviewOverviewBatches: "Review Batches",
           reviewOverviewReadingOrder: "Overview Reading Order",
           reviewBatchSourceGroups: "Source Groups",
           implementationSummary: "Implementation Summary",
-          sourceReadingGuide: "Source Reading Guide",
+          sourceReadingGuide: "Advanced Source Details",
           reviewWalkthrough: "Suggested Reading Order",
           risks: "Risks",
           testSuggestions: "Test Suggestions",
@@ -1647,12 +1823,24 @@ export function renderApp(repoPath: string): string {
           llmReviewConfig: "LLM Review Config",
           llmEnabled: "Enabled",
           llmDisabled: "Disabled",
+          memoryProtection: "Requirement Memory Protection",
+          keyConfigured: "Key status",
+          keyEnv: "Key env",
+          detected: "Detected",
+          encrypted: "Encrypted",
+          plaintext: "Plaintext",
+          missing: "Missing",
+          encryptedFiles: "Encrypted files",
+          plaintextFiles: "Plaintext files",
+          missingFiles: "Missing files",
+          noProtectionWarnings: "No protection warnings.",
+          memoryProtectionHint: "To encrypt requirement memory, set SPECWEFT_MEMORY_KEY and run specweft protect. Markdown reports stay plaintext for human review.",
           model: "Model",
           baseUrl: "Base URL",
           maxDiffChars: "Max diff chars",
           apiKeyEnv: "API key env",
           notDetected: "Not detected",
-          llmConfigHint: "SpecWeft only checks whether env vars exist and never displays secrets. Set SPECWEFT_LLM_API_KEY to add an LLM summary on top of rule-based reviews.",
+          llmConfigHint: "SpecWeft only checks whether env vars exist and never displays secrets. Set SPECWEFT_LLM_API_KEY to add an LLM summary on top of rule-based reviews. Remote calls time out after 15 seconds by default; change it with SPECWEFT_LLM_TIMEOUT_MS.",
           idle: "Idle",
           loading: "Loading",
           ready: "Ready",
@@ -1708,7 +1896,8 @@ export function renderApp(repoPath: string): string {
           noSkillDetailYet: "Select a Skill to inspect its content.",
           noRuntimeYet: "No runtime assembly yet.",
           noConnectYet: "No connection config yet.",
-          noLlmConfigYet: "No LLM config status yet."
+          noLlmConfigYet: "No LLM config status yet.",
+          noMemoryProtectionYet: "No memory protection status yet."
         }
       };
 
@@ -1854,6 +2043,7 @@ export function renderApp(repoPath: string): string {
         renderAssembly(data.assembly);
         renderConnect(data.mcpInspect);
         renderLlmConfig(data.llmConfig);
+        renderMemoryProtection(data.memoryProtection);
         renderRecordingStatus(data.recordingStatus);
         renderWorkSegments(data.workSegments);
         renderRequirementDossier(data.requirementDossier);
@@ -1869,6 +2059,7 @@ export function renderApp(repoPath: string): string {
         document.getElementById("assemblyOutput").innerHTML = emptyState(t("noRuntimeYet"));
         document.getElementById("connectOutput").innerHTML = emptyState(t("noConnectYet"));
         document.getElementById("llmConfigOutput").innerHTML = emptyState(t("noLlmConfigYet"));
+        document.getElementById("memoryProtectionOutput").innerHTML = emptyState(t("noMemoryProtectionYet"));
         document.getElementById("reviewOutput").innerHTML = emptyState(t("noReviewYet"));
         document.getElementById("requirementDossierOutput").innerHTML = emptyState(t("noRequirementDossier"));
         document.getElementById("memoryDigestOutput").innerHTML = emptyState(t("timelineEmpty"));
@@ -1907,8 +2098,7 @@ export function renderApp(repoPath: string): string {
                 [t("status"), item.confidence || "-"],
                 [t("matchSource"), item.matchSource || "-"],
                 [t("fileRole"), item.fileRole || "-"],
-                [t("matchedSignals"), item.matchedSignals?.length ? item.matchedSignals.join(", ") : "-"],
-                [t("codePreview"), item.preview ? (item.startLine ? "L" + item.startLine + ": " : "") + item.preview : "-"]
+                [t("matchedSignals"), item.matchedSignals?.length ? item.matchedSignals.join(", ") : "-"]
               ])).join("")
             : emptyState(t("noCodePointers"))),
           sectionCard(t("skillSuggestions"), data.skillSuggestions?.length
@@ -1931,8 +2121,24 @@ export function renderApp(repoPath: string): string {
               ])).join("")
             : emptyState(t("noMemorySuggestions"))),
           sectionCard(t("matchedRequirement"), renderMatchedRequirement(data.matchedRequirement)),
+          sectionCard(t("agentGuardrail"), renderTaskGuardrail(data.guardrail || {})),
           sectionCard(t("executionPlan"), renderExecutionPlan(data.executionPlan || [])),
           sectionCard(t("agentInstructions"), "<div class='prompt-box'>" + escapeHtml(data.agentInstructions || "-") + "</div>")
+        ].join("");
+      }
+
+      function renderTaskGuardrail(guardrail) {
+        return [
+          detailGrid([
+            [t("boundaryRequired"), guardrail.boundaryRequired ? "yes" : "no"],
+            [t("currentRequirement"), guardrail.requirementTitle || guardrail.requirementId || "-"]
+          ]),
+          "<h3>" + escapeHtml(t("startWorkSegmentInput")) + "</h3>",
+          "<div class='codebox'>" + escapeHtml(JSON.stringify(guardrail.startWorkSegmentInput || {}, null, 2)) + "</div>",
+          "<h3>" + escapeHtml(t("recordCurrentDiffInput")) + "</h3>",
+          "<div class='codebox'>" + escapeHtml(JSON.stringify(guardrail.recordCurrentDiffInput || {}, null, 2)) + "</div>",
+          "<h3>" + escapeHtml(t("finalResponseChecklist")) + "</h3>",
+          listHtml(guardrail.finalResponseChecklist?.length ? guardrail.finalResponseChecklist : ["-"])
         ].join("");
       }
 
@@ -2019,6 +2225,37 @@ export function renderApp(repoPath: string): string {
             [t("apiKeyEnv"), config?.env?.apiKey || t("notDetected")]
           ]),
           "<p>" + escapeHtml(t("llmConfigHint")) + "</p>"
+        ].join(""));
+      }
+
+      function renderMemoryProtection(protection) {
+        if (!protection) {
+          document.getElementById("memoryProtectionOutput").innerHTML = emptyState(t("noMemoryProtectionYet"));
+          return;
+        }
+
+        const fileRows = (protection.files || []).map((file) => [
+          escapeHtml(file.label || file.id || "-"),
+          escapeHtml(file.encrypted ? t("encrypted") : file.exists ? t("plaintext") : t("missing")),
+          escapeHtml(file.path || "-")
+        ]);
+        const warnings = protection.warnings?.length
+          ? listHtml(protection.warnings)
+          : "<p>" + escapeHtml(t("noProtectionWarnings")) + "</p>";
+        document.getElementById("memoryProtectionOutput").innerHTML = sectionCard(t("memoryProtection"), [
+          detailGrid([
+            [t("status"), protection.summary || "-"],
+            [t("keyConfigured"), protection.keyConfigured ? t("detected") : t("notDetected")],
+            [t("keyEnv"), protection.keyEnv || "SPECWEFT_MEMORY_KEY"],
+            [t("encryptedFiles"), String(protection.protectedFiles || 0)],
+            [t("plaintextFiles"), String(protection.plaintextFiles || 0)],
+            [t("missingFiles"), String(protection.missingFiles || 0)]
+          ]),
+          "<div class='mini-table'>" + fileRows.map((row) =>
+            "<div>" + row.map((cell) => "<span>" + cell + "</span>").join("") + "</div>"
+          ).join("") + "</div>",
+          warnings,
+          "<p>" + escapeHtml(t("memoryProtectionHint")) + "</p>"
         ].join(""));
       }
 
@@ -2271,6 +2508,7 @@ export function renderApp(repoPath: string): string {
 
       function renderReview(data) {
         document.getElementById("reviewOutput").innerHTML = [
+          renderReviewDigest(data.review?.reviewDigest || {}, data.review?.summary || data.memory?.summary || "-"),
           sectionCard(data.title, detailGrid([
             [t("currentRequirement"), data.requirement?.title || "-"],
             [t("reportPath"), data.reportPath],
@@ -2278,11 +2516,94 @@ export function renderApp(repoPath: string): string {
             [t("codeStatus"), formatCodeStatus(data.memory)],
             [t("expiresAt"), data.memory?.expiresAt || "-"]
           ])),
+          "<details class='advanced-section'>",
+          "<summary>" + escapeHtml(t("advancedReviewDetails")) + "</summary>",
           sectionCard(t("summary"), "<p>" + escapeHtml(data.review?.summary || data.memory?.summary || "-") + "</p>"),
-          sectionCard(t("requirementBlocks"), renderReviewRequirementBlocks(data.review?.requirementBlocks || [])),
           sectionCard(t("reviewOverview"), renderReviewOverview(data.review || {})),
+          sectionCard(t("requirementBlocks"), renderReviewRequirementBlocks(data.review?.requirementBlocks || [])),
           sectionCard(t("changeGroups"), renderReviewChangeGroups(data.review?.changeGroups || [])),
-          sectionCard(t("review"), "<div class='review-report'>" + (data.html || "") + "</div>")
+          sectionCard(t("review"), "<div class='review-report'>" + (data.html || "") + "</div>"),
+          "</details>"
+        ].join("");
+      }
+
+      function renderReviewDigest(digest, fallbackSummary) {
+        const reading = digest.readingPath || [];
+        return [
+          "<article class='result-card review-digest-card'>",
+          "<div class='review-digest-heading'>",
+          "<h2>" + escapeHtml(digest.title || t("reviewDigest")) + "</h2>",
+          "<p><strong>" + escapeHtml(t("requirementContext")) + "：</strong>" + escapeHtml(digest.requirementContext || "-") + "</p>",
+          "<p><strong>" + escapeHtml(t("oneLineSummary")) + "：</strong>" + escapeHtml(digest.oneLineSummary || fallbackSummary || "-") + "</p>",
+          "</div>",
+          renderReviewSections(digest.sections || []),
+          "<div class='review-digest-grid'>",
+          reviewDigestBlock(t("whyChanged"), digest.whyChanged || []),
+          reviewDigestBlock(t("implementationPath"), digest.implementationPath || []),
+          reviewReadingBlock(t("readingPath"), reading),
+          reviewDigestBlock(t("reviewNotes"), digest.reviewNotes || []),
+          reviewDigestBlock(t("validation"), digest.validation || []),
+          reviewDigestBlock(t("confidence"), [
+            formatGroupConfidence(digest.confidence),
+            ...(digest.confidenceReasons || [])
+          ]),
+          "</div>",
+          "</article>"
+        ].join("");
+      }
+
+      function renderReviewSections(sections) {
+        if (!sections.length) {
+          return "";
+        }
+
+        return [
+          "<div class='review-section-list'>",
+          "<h3>" + escapeHtml(t("requirementSections")) + "</h3>",
+          sections.map((section, index) => [
+            "<article class='review-section-item'>",
+            "<h3>" + escapeHtml(String(index + 1) + ". " + (section.title || "-")) + "</h3>",
+            "<p>" + escapeHtml(section.summary || "-") + "</p>",
+            detailGrid([
+              [t("requirementBlockKind"), formatRequirementBlockKind(section.kind)],
+              [t("sectionWhy"), section.whyChanged || "-"],
+              [t("sectionImplementation"), section.implementation || "-"],
+              [t("sectionEntry"), section.readingEntry?.path || "-"],
+              [t("validation"), section.validation || "-"],
+              [t("confidence"), formatGroupConfidence(section.confidence)]
+            ]),
+            "</article>"
+          ].join("")).join(""),
+          "</div>"
+        ].join("");
+      }
+
+      function reviewDigestBlock(title, items) {
+        return [
+          "<div class='review-digest-block'>",
+          "<h3>" + escapeHtml(title) + "</h3>",
+          listHtml(items.length ? items : ["-"]),
+          "</div>"
+        ].join("");
+      }
+
+      function reviewReadingBlock(title, items) {
+        if (!items.length) {
+          return reviewDigestBlock(title, ["-"]);
+        }
+
+        return [
+          "<div class='review-digest-block'>",
+          "<h3>" + escapeHtml(title) + "</h3>",
+          "<ol class='review-reading-list'>",
+          items.map((item) => [
+            "<li>",
+            "<strong>" + escapeHtml(item.title ? item.title + "：" + (item.path || "-") : item.path || "-") + "</strong>",
+            "<span>" + escapeHtml(item.reason || "-") + "</span>",
+            "</li>"
+          ].join("")).join(""),
+          "</ol>",
+          "</div>"
         ].join("");
       }
 

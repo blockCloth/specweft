@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { analyzeCurrentDiff, createReviewReport } from "../diff/diff-analyzer.js";
+import { analyzeCurrentDiff, createAgentReviewPacket, createReviewReport } from "../diff/diff-analyzer.js";
 import { createRequirement } from "../requirements/requirement-manager.js";
 import { saveSessionMemory } from "../memory/session-memory.js";
 import { startWorkSegment } from "../work-segments/work-segment-manager.js";
@@ -32,6 +32,14 @@ test("creates a structured review report with HTML and session memory", async ()
     assert.equal(report.title, "Explain <diff>");
     assert.equal(report.review.generationSource, "rules");
     assert.match(report.review.summary, /当前 diff 修改了 1 个文件/);
+    assert.equal(report.review.reviewDigest.title, "Explain <diff>");
+    assert.match(report.review.reviewDigest.requirementContext, /没有活跃工作段/);
+    assert.match(report.review.reviewDigest.oneLineSummary, /本次修改围绕/);
+    assert.ok(report.review.reviewDigest.whyChanged.length > 0);
+    assert.ok(report.review.reviewDigest.implementationPath.length > 0);
+    assert.ok(report.review.reviewDigest.sections.some((item) => item.title.includes("项目根目录")));
+    assert.ok(report.review.reviewDigest.readingPath.some((item) => item.path === "index.ts"));
+    assert.ok(report.review.reviewDigest.validation.length > 0);
     assert.ok(report.review.mainChanges.some((item) => item.includes("index.ts")));
     assert.ok(report.review.implementationSummary.some((item) => item.includes("运行时代码")));
     assert.ok(report.review.sourceReadingGuide.some((item) => item.path === "index.ts"));
@@ -39,21 +47,30 @@ test("creates a structured review report with HTML and session memory", async ()
     assert.ok(report.review.reviewOverview.batches.some((batch) => batch.files.some((file) => file.path === "index.ts")));
     assert.ok(report.review.reviewOverview.keyValues.some((item) => item.key === "识别批次数" && item.value === "1"));
     assert.match(report.html, /Explain &lt;diff&gt;/);
+    assert.match(report.html, /需求上下文/);
+    assert.match(report.html, /需求分块/);
+    assert.match(report.html, /为什么这样改/);
+    assert.match(report.html, /阅读入口/);
     assert.match(report.html, /实现内容总结/);
     assert.match(report.html, /本次修改概览/);
     assert.match(report.html, /改动分组/);
     assert.match(report.html, /需求拆解/);
-    assert.match(report.html, /源码查看方式/);
+    assert.match(report.html, /高级源码详情/);
     assert.match(report.html, /生成方式/);
     assert.match(report.html, /分组依据/);
     assert.match(report.html, /置信度/);
     assert.match(report.html, /<section>/);
     assert.match(markdown, /# Explain <diff>/);
     assert.match(markdown, /## Implemented Functionality/);
+    assert.match(markdown, /## Review Digest/);
+    assert.match(markdown, /需求上下文/);
+    assert.match(markdown, /需求分块/);
+    assert.match(markdown, /为什么这样改/);
+    assert.match(markdown, /阅读入口/);
     assert.match(markdown, /## Review Overview/);
     assert.match(markdown, /## Requirement Blocks/);
     assert.match(markdown, /## Change Groups/);
-    assert.match(markdown, /## Source Reading Guide/);
+    assert.match(markdown, /## Advanced Source Details/);
     assert.match(markdown, /分组依据/);
     assert.match(markdown, /置信度/);
     assert.ok(report.review.changeGroups.some((group) => group.files.some((file) => file.path === "index.ts")));
@@ -66,6 +83,44 @@ test("creates a structured review report with HTML and session memory", async ()
     assert.equal(report.memory.requirementId, report.requirement?.id);
     assert.ok(report.reportPath.includes(path.join(".specweft", "reports", report.requirement?.id ?? "")));
     assert.ok(report.memory.changedFiles.includes("index.ts"));
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("creates an agent review packet that is digest-first and patch-free", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-agent-review-packet-"));
+
+  try {
+    await execFileAsync("git", ["init"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.email", "specweft@example.com"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.name", "SpecWeft"], { cwd: repoPath });
+    await writeFile(path.join(repoPath, "index.ts"), "export const oldValue = 1;\n", "utf-8");
+    await execFileAsync("git", ["add", "index.ts"], { cwd: repoPath });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repoPath });
+    await writeFile(path.join(repoPath, "index.ts"), "export const newValue = 2;\n", "utf-8");
+
+    const report = await createReviewReport(repoPath, profile(repoPath), "Agent packet review");
+    const diff = await analyzeCurrentDiff(repoPath);
+    const packet = createAgentReviewPacket({
+      title: report.title,
+      review: report.review,
+      diff,
+      requirement: report.requirement,
+      reportPath: report.reportPath,
+    });
+
+    assert.equal(packet.title, "Agent packet review");
+    assert.equal(packet.digest.title, "Agent packet review");
+    assert.ok(packet.sourceReading.some((item) => item.path === "index.ts"));
+    assert.ok(packet.digest.sections.some((item) => item.title.includes("项目根目录")));
+    assert.match(packet.suggestedAgentResponse, /为什么这样改/);
+    assert.match(packet.suggestedAgentResponse, /阅读入口/);
+    assert.ok(packet.nextActions.some((item) => item.includes("digest")));
+    assert.equal(packet.advanced.omittedPatch, true);
+    assert.equal(packet.advanced.fullReviewAvailable, true);
+    assert.equal(packet.advanced.reportPath, report.reportPath);
+    assert.ok(!JSON.stringify(packet).includes("diff --git"));
   } finally {
     await rm(repoPath, { recursive: true, force: true });
   }
@@ -188,6 +243,10 @@ test("uses active work segment boundaries in review guidance", async () => {
       && block.files.some((file) => file.path === "old.ts"),
     ));
     assert.ok(report.review.reviewWalkthrough.some((item) => item.includes("本工作段新增改动文件：new.ts")));
+    assert.match(report.review.reviewDigest.requirementContext, /New request/);
+    assert.ok(report.review.reviewDigest.whyChanged.some((item) => item.includes("New request")));
+    assert.ok(report.review.reviewDigest.whyChanged.some((item) => item.includes("旧改动")));
+    assert.ok(["medium", "high"].includes(report.review.reviewDigest.confidence));
     assert.ok(report.review.reviewWalkthrough.some((item) => item.includes("开始工作段前已经存在的改动仍在 diff 中：old.ts")));
     assert.ok(report.review.risks.some((item) => item.includes("工作段开始时已有未提交改动")));
     assert.ok(report.review.reviewChecklist.some((item) => item.includes("carriedChangedFiles")));
@@ -487,6 +546,18 @@ test("splits one mixed diff into separate historical requirement groups", async 
     assert.ok(groups.every((group) => group.keyValues.some((item) => item.key === "分组依据")));
     assert.ok(groups.every((group) => group.keyValues.some((item) => item.key === "置信度")));
     assert.equal(report.review.reviewOverview.batches.length, 2);
+    assert.match(report.review.reviewDigest.requirementContext, /2 条需求线/);
+    assert.equal(report.review.reviewDigest.sections.length, 2);
+    assert.ok(report.review.reviewDigest.sections.some((section) =>
+      section.title.includes("登录校验优化")
+      && section.readingEntry?.path === "src/login.ts",
+    ));
+    assert.ok(report.review.reviewDigest.sections.some((section) =>
+      section.title.includes("账单流程优化")
+      && section.readingEntry?.path === "src/billing.ts",
+    ));
+    assert.ok(report.review.reviewDigest.whyChanged.some((item) => item.includes("登录校验优化")));
+    assert.ok(report.review.reviewDigest.implementationPath.length >= 2);
     assert.ok(report.review.reviewOverview.batches.some((batch) => batch.title.includes("登录校验优化")));
     assert.ok(report.review.reviewOverview.batches.some((batch) => batch.title.includes("账单流程优化")));
     assert.ok(report.review.reviewOverview.readingOrder.some((item) => item.includes("登录校验优化")));

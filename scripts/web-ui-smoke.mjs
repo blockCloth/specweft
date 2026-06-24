@@ -20,6 +20,7 @@ assertIncludes(html, "loadingMemory", "memory loading state is missing");
 assertIncludes(html, "networkFailed", "network error message is missing");
 assertIncludes(html, "response.text()", "api helper should handle non-JSON error bodies");
 assertIncludes(html, "formatGroupConfidence", "review confidence formatter is missing");
+assertIncludes(html, "requirementSections", "review digest requirement sections should be rendered");
 assertIncludes(html, "requirementBlocks", "review requirement block renderer or i18n key is missing");
 assertIncludes(html, "renderReviewRequirementBlocks", "review requirement block renderer is missing");
 assertIncludes(html, "formatRequirementBlockKind", "review requirement block kind formatter is missing");
@@ -27,7 +28,7 @@ assertIncludes(html, "reviewOverview", "review overview section should be render
 assertIncludes(html, "reviewOverviewBatches", "review batch overview i18n key is missing");
 assertIncludes(html, "renderReviewBatches", "review batch renderer is missing");
 assertIncludes(html, "reviewBatchSourceGroups", "review batch source group label is missing");
-assertIncludes(html, "sourceReadingGuide", "source reading guide should be rendered outside the raw report");
+assertIncludes(html, "sourceReadingGuide", "advanced source details should be rendered outside the raw report");
 assertIncludes(html, "reviewFocus", "review group focus notes should be rendered");
 assertIncludes(html, "groupTestSuggestions", "review group verification suggestions should be rendered");
 assertIncludes(html, "codexConfig", "connect view should render Codex config snippets");

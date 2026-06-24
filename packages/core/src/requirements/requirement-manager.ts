@@ -6,7 +6,7 @@ import type {
   RequirementRecord,
   RequirementReviewLink,
 } from "../schemas/types.js";
-import { readJsonFile, writeJsonFile } from "../utils/json.js";
+import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
 import { projectConfigDir } from "../utils/path.js";
 
 export async function listRequirements(repoPath: string): Promise<RequirementFile> {
@@ -114,7 +114,7 @@ function requirementPath(repoPath: string): string {
 }
 
 async function readRequirementFile(repoPath: string): Promise<RequirementFile> {
-  const file = await readJsonFile<RequirementFile>(requirementPath(repoPath));
+  const file = await readSecureJsonFile<RequirementFile>(requirementPath(repoPath));
 
   return {
     version: file?.version ?? 1,
@@ -126,7 +126,7 @@ async function readRequirementFile(repoPath: string): Promise<RequirementFile> {
 }
 
 async function writeRequirementFile(repoPath: string, file: RequirementFile): Promise<void> {
-  await writeJsonFile(requirementPath(repoPath), {
+  await writeSecureJsonFile(requirementPath(repoPath), {
     version: 1,
     activeRequirementId: file.activeRequirementId,
     requirements: [...file.requirements].sort((left, right) =>

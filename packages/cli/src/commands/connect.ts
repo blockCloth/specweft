@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   createMemoryDigest,
   createRuntimeAssembly,
+  getMemoryProtectionStatus,
   getRecordingStatus,
   listRequirements,
   resolveRepoPath,
@@ -32,14 +33,45 @@ const REQUIRED_AGENT_WORKFLOW_TOKENS = [
   "specweft.record_current_diff",
 ];
 
+const REQUIRED_HARNESS_FILES = [
+  ".agents/skills/specweft-prepare-task/SKILL.md",
+  ".agents/skills/specweft-before-edit/SKILL.md",
+  ".agents/skills/specweft-after-edit-review/SKILL.md",
+  ".agents/skills/specweft-memory-restore/SKILL.md",
+  ".codex/skills/specweft-prepare-task/SKILL.md",
+  ".codex/skills/specweft-before-edit/SKILL.md",
+  ".codex/skills/specweft-after-edit-review/SKILL.md",
+  ".codex/skills/specweft-memory-restore/SKILL.md",
+  ".codex/prompts/specweft-review.md",
+  ".codex/prompts/specweft-continue.md",
+  ".codex/prompts/specweft-restore.md",
+  ".codex/prompts/specweft-finish.md",
+  ".claude/skills/specweft-prepare-task/SKILL.md",
+  ".claude/skills/specweft-before-edit/SKILL.md",
+  ".claude/skills/specweft-after-edit-review/SKILL.md",
+  ".claude/skills/specweft-memory-restore/SKILL.md",
+  ".claude/commands/specweft/review.md",
+  ".claude/commands/specweft/continue.md",
+  ".claude/commands/specweft/restore.md",
+  ".claude/commands/specweft/finish.md",
+];
+
+const REQUIRED_HARNESS_TOKENS = [
+  "specweft.prepare_task",
+  "specweft.restore_requirement",
+  "specweft.start_work_segment",
+  "specweft.record_current_diff",
+];
+
 export async function runDoctor(repoArg: string): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
   const profile = await scanProject(repoPath);
-  const [assembly, requirements, recordingStatus, memoryDigest] = await Promise.all([
+  const [assembly, requirements, recordingStatus, memoryDigest, memoryProtection] = await Promise.all([
     createRuntimeAssembly(repoPath),
     listRequirements(repoPath),
     getRecordingStatus(repoPath),
     createMemoryDigest(repoPath, profile),
+    getMemoryProtectionStatus(repoPath),
   ]);
   const cliEntryPath = resolveCliEntryPath();
   const checks: DoctorCheck[] = [
@@ -51,6 +83,7 @@ export async function runDoctor(repoArg: string): Promise<void> {
       "error",
     ),
     await checkProjectInstructionFiles(repoPath),
+    await checkAgentHarnessFiles(repoPath),
     await checkFile("CLI MCP 入口", cliEntryPath, "重新构建或重新安装 specweft"),
     {
       label: "项目 Skill 选择",
@@ -75,6 +108,13 @@ export async function runDoctor(repoArg: string): Promise<void> {
       ok: true,
       severity: "warn",
       detail: `${requirements.requirements.length} 条需求线，${memoryDigest.totalThreads} 条记忆入口`,
+    },
+    {
+      label: "需求记忆保护",
+      ok: memoryProtection.plaintextFiles === 0 && memoryProtection.protectedFiles > 0,
+      severity: "warn",
+      detail: memoryProtection.summary,
+      fix: "export SPECWEFT_MEMORY_KEY=\"一段足够长的本地密钥\" && specweft protect",
     },
     {
       label: "当前 diff 记录",
@@ -103,8 +143,8 @@ export async function runDoctor(repoArg: string): Promise<void> {
     ``,
     "下一步建议:",
     "1. 运行 specweft setup-codex 或 specweft setup-claude，复制对应 MCP 配置。",
-    "2. 在客户端加入 specweft MCP 配置后，新线程先让 Agent 调用 specweft.bootstrap_session。",
-    "3. 每次改代码前调用 specweft.prepare_task 和 specweft.start_work_segment，改完调用 specweft.record_current_diff。",
+    "2. 在客户端加入 specweft MCP 配置后，项目 Harness 会通过 Skills/Commands 引导 Agent 自动调用 SpecWeft。",
+    "3. 每次改代码前由 Harness 调用 specweft.prepare_task，并用 guardrail.startWorkSegmentInput / guardrail.recordCurrentDiffInput 完成边界和记录。",
   ].filter((line): line is string => line !== undefined).join("\n"));
 }
 
@@ -250,6 +290,51 @@ async function readInstructionState(filePath: string): Promise<{
       valid: false,
     };
   }
+}
+
+async function checkAgentHarnessFiles(repoPath: string): Promise<DoctorCheck> {
+  const states = await Promise.all(REQUIRED_HARNESS_FILES.map(async (relativePath) => {
+    const filePath = path.join(repoPath, relativePath);
+
+    try {
+      const content = await readFile(filePath, "utf-8");
+      return {
+        relativePath,
+        exists: true,
+        valid: REQUIRED_HARNESS_TOKENS.some((token) => content.includes(token)),
+      };
+    } catch {
+      return {
+        relativePath,
+        exists: false,
+        valid: false,
+      };
+    }
+  }));
+  const missing = states.filter((state) => !state.exists).map((state) => state.relativePath);
+  const outdated = states
+    .filter((state) => state.exists && !state.valid)
+    .map((state) => state.relativePath);
+
+  if (missing.length === 0 && outdated.length === 0) {
+    return {
+      label: "Agent Harness",
+      ok: true,
+      severity: "warn",
+      detail: `${states.length} 个 Skill/Command 模板已写入`,
+    };
+  }
+
+  return {
+    label: "Agent Harness",
+    ok: false,
+    severity: "warn",
+    detail: [
+      missing.length ? `缺失 ${missing.length} 个: ${missing.slice(0, 4).join(", ")}` : "",
+      outdated.length ? `过旧 ${outdated.length} 个: ${outdated.slice(0, 4).join(", ")}` : "",
+    ].filter(Boolean).join("；"),
+    fix: "运行 specweft init 重新生成 Agent Harness",
+  };
 }
 
 function getMissingInstructionTokens(content: string): string[] {

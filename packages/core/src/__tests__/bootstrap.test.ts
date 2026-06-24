@@ -17,11 +17,23 @@ test("initializes project for agent bootstrap workflow", async () => {
     const result = await initializeSpecWeftProject(repoPath);
     const instruction = await readFile(path.join(repoPath, "AGENTS.md"), "utf-8");
     const claudeInstruction = await readFile(path.join(repoPath, "CLAUDE.md"), "utf-8");
+    const codexSkill = await readFile(
+      path.join(repoPath, ".codex", "skills", "specweft-prepare-task", "SKILL.md"),
+      "utf-8",
+    );
+    const claudeCommand = await readFile(
+      path.join(repoPath, ".claude", "commands", "specweft", "review.md"),
+      "utf-8",
+    );
 
     assert.equal(result.profile.rootPath, repoPath);
     assert.deepEqual(result.enabled.mcps.map((item) => item.id), ["filesystem", "git"]);
     assert.deepEqual(result.enabled.skills.map((item) => item.id), ["diff-explainer", "test-planner"]);
     assert.ok(result.instructionPaths.some((filePath) => filePath.endsWith(".specweft/agent-instructions.md")));
+    assert.ok(result.harness.files.some((file) => file.path.endsWith(".codex/skills/specweft-prepare-task/SKILL.md")));
+    assert.ok(result.harness.files.some((file) => file.path.endsWith(".claude/commands/specweft/review.md")));
+    assert.ok(result.harness.skillNames.includes("specweft-prepare-task"));
+    assert.ok(result.harness.commandNames.includes("specweft-review"));
     assert.match(instruction, /specweft\.bootstrap_session/);
     assert.match(instruction, /specweft\.get_memory_digest/);
     assert.match(instruction, /specweft\.get_requirement_dossier/);
@@ -29,11 +41,18 @@ test("initializes project for agent bootstrap workflow", async () => {
     assert.match(instruction, /specweft\.restore_requirement/);
     assert.match(instruction, /specweft\.start_work_segment/);
     assert.match(instruction, /specweft\.record_current_diff/);
+    assert.match(instruction, /guardrail\.startWorkSegmentInput/);
+    assert.match(instruction, /agentReview\.suggestedAgentResponse/);
     assert.match(claudeInstruction, /specweft\.bootstrap_session/);
     assert.match(claudeInstruction, /specweft\.get_memory_digest/);
     assert.match(claudeInstruction, /specweft\.get_requirement_dossier/);
     assert.match(claudeInstruction, /specweft\.prepare_task/);
     assert.match(claudeInstruction, /specweft\.start_work_segment/);
+    assert.match(codexSkill, /specweft\.prepare_task/);
+    assert.match(codexSkill, /specweft\.restore_requirement/);
+    assert.match(codexSkill, /guardrail\.startWorkSegmentInput/);
+    assert.match(codexSkill, /guardrail\.recordCurrentDiffInput/);
+    assert.match(claudeCommand, /specweft\.record_current_diff/);
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });
@@ -73,6 +92,7 @@ test("updates existing SpecWeft instruction blocks during init", async () => {
     assert.doesNotMatch(instruction, /Old SpecWeft Block/);
     assert.match(instruction, /specweft\.start_work_segment/);
     assert.match(instruction, /specweft\.record_current_diff/);
+    assert.match(instruction, /guardrail\.recordCurrentDiffInput/);
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });
@@ -101,6 +121,8 @@ test("creates bootstrap session with profile, assembly, recommendations, and wor
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("restore_requirement")));
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("record_current_diff")));
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_recording_status")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("guardrail.startWorkSegmentInput")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("agentReview.suggestedAgentResponse")));
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });

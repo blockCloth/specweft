@@ -10,6 +10,7 @@ export type CliArgs = {
   port?: number;
   json?: boolean;
   full?: boolean;
+  statusOnly?: boolean;
 };
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -83,6 +84,11 @@ export function parseArgs(argv: string[]): CliArgs {
 
     if (current === "--full") {
       args.full = true;
+      continue;
+    }
+
+    if (current === "--status") {
+      args.statusOnly = true;
     }
   }
 

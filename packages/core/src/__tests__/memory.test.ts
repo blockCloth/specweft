@@ -16,11 +16,25 @@ import {
   restoreRequirementMemory,
   saveSessionMemory,
 } from "../memory/session-memory.js";
+import {
+  getMemoryProtectionStatus,
+  protectMemoryFiles,
+} from "../security/memory-protection.js";
 import { getRecordingStatus } from "../recording/recording-status.js";
 import { createRequirement } from "../requirements/requirement-manager.js";
 import type { ProjectProfile } from "../schemas/types.js";
 
 const execFileAsync = promisify(execFile);
+const originalMemoryKey = process.env.SPECWEFT_MEMORY_KEY;
+
+test.afterEach(() => {
+  if (originalMemoryKey === undefined) {
+    delete process.env.SPECWEFT_MEMORY_KEY;
+    return;
+  }
+
+  process.env.SPECWEFT_MEMORY_KEY = originalMemoryKey;
+});
 
 test("creates a keyword-based memory handoff prompt", async () => {
   const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-test-"));
@@ -44,6 +58,79 @@ test("creates a keyword-based memory handoff prompt", async () => {
     assert.match(handoff.prompt, /Continue from this SpecWeft handoff/);
     assert.match(handoff.prompt, /packages\/web\/src\/ui\.ts/);
     assert.ok(handoff.keywords.includes("handoff"));
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("encrypts requirement memory files when a memory key is configured", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-encrypted-"));
+
+  try {
+    process.env.SPECWEFT_MEMORY_KEY = "local test memory key with enough entropy";
+    await saveSessionMemory(repoPath, {
+      projectId: "project",
+      title: "Encrypted login memory",
+      keywords: ["login", "secure"],
+      summary: "Sensitive requirement detail should not be visible in the local memory file.",
+      changedFiles: ["src/login.ts"],
+    });
+
+    const memoryPath = path.join(repoPath, ".specweft", "memory.json");
+    const raw = await readFile(memoryPath, "utf-8");
+    const sessions = await recallSessions(repoPath, "login");
+    const protection = await getMemoryProtectionStatus(repoPath);
+
+    assert.match(raw, /specweftSecureJson/);
+    assert.doesNotMatch(raw, /Sensitive requirement detail/);
+    assert.equal(sessions.length, 1);
+    assert.equal(sessions[0]?.title, "Encrypted login memory");
+    assert.equal(protection.files.find((file) => file.id === "memory")?.encrypted, true);
+
+    delete process.env.SPECWEFT_MEMORY_KEY;
+    await assert.rejects(
+      () => recallSessions(repoPath, "login"),
+      /SPECWEFT_MEMORY_KEY/,
+    );
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("migrates existing plaintext memory state with protectMemoryFiles", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-protect-"));
+
+  try {
+    const memoryDir = path.join(repoPath, ".specweft");
+    await mkdir(memoryDir, { recursive: true });
+    await writeFile(path.join(memoryDir, "memory.json"), JSON.stringify({
+      sessions: [
+        {
+          id: "plain",
+          projectId: "project",
+          title: "Plain login memory",
+          keywords: ["login"],
+          summary: "This plaintext memory should be encrypted.",
+          changedFiles: ["src/login.ts"],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        },
+      ],
+    }, null, 2), "utf-8");
+
+    process.env.SPECWEFT_MEMORY_KEY = "migration test memory key with enough entropy";
+    const result = await protectMemoryFiles(repoPath);
+    const raw = await readFile(path.join(memoryDir, "memory.json"), "utf-8");
+    const sessions = await recallSessions(repoPath, "login");
+
+    assert.equal(result.plaintextFiles, 0);
+    assert.ok(result.migratedFiles.some((file) => file.endsWith("memory.json")));
+    assert.ok(result.createdFiles.some((file) => file.endsWith("requirements.json")));
+    assert.ok(result.createdFiles.some((file) => file.endsWith("work-segments.json")));
+    assert.match(raw, /specweftSecureJson/);
+    assert.doesNotMatch(raw, /This plaintext memory should be encrypted/);
+    assert.equal(sessions[0]?.title, "Plain login memory");
   } finally {
     await rm(repoPath, { recursive: true, force: true });
   }

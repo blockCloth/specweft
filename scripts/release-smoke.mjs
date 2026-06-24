@@ -94,8 +94,8 @@ assertIncludes(doctor, "项目 Skill 选择", "doctor should report project Skil
 assertIncludes(doctor, "项目 MCP 选择", "doctor should report project MCP selections as optional readiness context");
 assertIncludes(doctor, "接入状态正常", "doctor should report a healthy initialized project");
 assertIncludes(doctor, "specweft.prepare_task", "doctor should mention the expected MCP workflow");
-assertIncludes(doctor, "specweft.start_work_segment", "doctor should mention work segment boundaries");
-assertIncludes(doctor, "specweft.record_current_diff", "doctor should mention final diff recording");
+assertIncludes(doctor, "guardrail.startWorkSegmentInput", "doctor should mention guardrail work segment boundaries");
+assertIncludes(doctor, "guardrail.recordCurrentDiffInput", "doctor should mention guardrail diff recording");
 await rm(path.join(projectDir, "AGENTS.md"), { force: true });
 await rm(path.join(projectDir, "CLAUDE.md"), { force: true });
 const doctorWithoutCopies = await runSpecWeft(["doctor"], projectDir);
@@ -122,9 +122,26 @@ await assertFileIncludes(
   path.join(workspaceDir, "node_modules", "@specweft", "core", "dist", "work-segments", "work-segment-manager.js"),
   "startWorkSegment",
 );
+await assertFileIncludes(
+  path.join(workspaceDir, "node_modules", "@specweft", "core", "dist", "security", "memory-protection.js"),
+  "protectMemoryFiles",
+);
 
 const digest = await runSpecWeft(["digest"], projectDir);
 assertIncludes(digest, "totalThreads", "digest should expose requirement-grouped memory metadata");
+
+const protectionStatus = await runSpecWeft(["protect", "--status"], projectDir);
+assertIncludes(protectionStatus, "SpecWeft 记忆保护", "protect --status should print memory protection status");
+assertIncludes(protectionStatus, "未检测到", "protect --status should report missing key before migration");
+
+const protectedEnv = {
+  ...env,
+  SPECWEFT_MEMORY_KEY: "release smoke memory key with enough entropy",
+};
+const protectedOutput = await runSpecWeft(["protect"], projectDir, protectedEnv);
+assertIncludes(protectedOutput, "已加密", "protect should encrypt local memory state when a key is configured");
+await assertFileIncludes(path.join(projectDir, ".specweft", "memory.json"), "specweftSecureJson");
+env.SPECWEFT_MEMORY_KEY = protectedEnv.SPECWEFT_MEMORY_KEY;
 
 const dossier = await runSpecWeft(["dossier"], projectDir);
 assertIncludes(dossier, "SpecWeft Requirement Dossier", "dossier should print a human-readable requirement dossier");
@@ -150,11 +167,12 @@ assertIncludes(segmentStart, "工作段已开始", "segment start should create 
 
 await writeFile(path.join(projectDir, "index.ts"), "export const ok = false;\n", "utf-8");
 const review = await runSpecWeft(["review", "--title", "release smoke review"], projectDir);
-assertIncludes(review, "需求拆解", "review should expose requirement-level explanation blocks");
-assertIncludes(review, "改动分组", "review should expose grouped code explanation");
-assertIncludes(review, "分组依据", "review should explain why files were grouped");
-assertIncludes(review, "置信度", "review should expose grouping confidence");
-assertIncludes(review, "源码查看方式", "review should include source reading instructions");
+assertIncludes(review, "需求上下文", "review should start with requirement context");
+assertIncludes(review, "需求分块", "review should expose requirement-oriented digest sections");
+assertIncludes(review, "为什么这样改", "review should explain why the change was made");
+assertIncludes(review, "实现思路", "review should summarize the implementation approach");
+assertIncludes(review, "阅读入口", "review should include digest-first reading entries");
+assertIncludes(review, "高级详情", "review should keep detailed grouping in the saved report");
 assertIncludes(review, "当前工作段", "review should mention the active work segment boundary");
 const segmentStatus = await runSpecWeft(["segment", "status"], projectDir);
 assertIncludes(segmentStatus, "release smoke review", "recorded review should close and title the active segment");
@@ -230,7 +248,7 @@ try {
 
 const blockingServer = spawn(process.execPath, [
   "-e",
-  "require('node:http').createServer((_,res)=>res.end('busy')).listen(4203)",
+  "require('node:http').createServer((_,res)=>res.end('busy')).listen(4203, '127.0.0.1')",
 ], {
   cwd: projectDir,
   env,
@@ -239,7 +257,7 @@ const blockingServer = spawn(process.execPath, [
 let shiftedUiProcess;
 
 try {
-  await waitForTextResponse("http://localhost:4203", "busy");
+  await waitForTextResponse("http://127.0.0.1:4203", "busy");
   shiftedUiProcess = spawn(binPath, ["start", "--port", "4203"], {
     cwd: projectDir,
     env,
@@ -266,10 +284,10 @@ async function readPackageJson(packageJsonRelativePath) {
   );
 }
 
-async function runSpecWeft(args, cwd) {
+async function runSpecWeft(args, cwd, commandEnv = env) {
   const result = await execFileAsync(binPath, args, {
     cwd,
-    env,
+    env: commandEnv,
     maxBuffer: 20 * 1024 * 1024,
   });
   return result.stdout;

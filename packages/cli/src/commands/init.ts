@@ -12,6 +12,14 @@ export async function runInit(repoArg: string, asJson = false): Promise<void> {
     enabledMcps: result.enabled.mcps.map((item) => item.id),
     enabledSkills: result.enabled.skills.map((item) => item.id),
     instructionPaths: result.instructionPaths,
+    harnessFiles: result.harness.files.map((item) => item.path),
+    harnessSkills: result.harness.skillNames,
+    codexPrompts: result.harness.files
+      .filter((item) => item.client === "codex" && item.kind === "prompt")
+      .map((item) => item.name),
+    claudeCommands: result.harness.files
+      .filter((item) => item.client === "claude" && item.kind === "command")
+      .map((item) => item.name),
     bootstrapTool: "specweft.bootstrap_session",
     nextCommands: result.nextCommands,
   };
@@ -33,11 +41,18 @@ export async function runInit(repoArg: string, asJson = false): Promise<void> {
     "已写入 Agent 指令：",
     ...output.instructionPaths.map((filePath) => `- ${filePath}`),
     "",
+    "已写入 Agent Harness：",
+    ...output.harnessFiles.map((filePath) => `- ${filePath}`),
+    "",
+    `自动 Skills：${output.harnessSkills.join(", ") || "-"}`,
+    `Codex Prompts：${output.codexPrompts.join(", ") || "-"}`,
+    `Claude Commands：${output.claudeCommands.join(", ") || "-"}`,
+    "",
     "下一步：",
     "1. 运行 specweft doctor 检查接入状态。",
     "2. 运行 specweft setup-codex 或 specweft setup-claude，复制 MCP 客户端配置。",
-    "3. 运行 specweft start 打开本地 Web 控制台。",
-    "4. 新线程里让 Agent 先调用 specweft.bootstrap_session。",
+    "3. 打开 Codex/Claude 后，Agent 会通过项目 Skill/Command 模板调用 SpecWeft MCP 工具。",
+    "4. 运行 specweft start 打开本地 Web 控制台。",
     "",
     "脚本需要 JSON 时可使用：specweft init --json",
   ].join("\n"));

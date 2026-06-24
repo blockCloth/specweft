@@ -60,7 +60,15 @@ test("prepares task context with file pointers, Skill suggestions, and memory ma
     assert.ok(prepared.executionPlan.some((item) => item.tool === "specweft.restore_requirement"));
     assert.ok(prepared.executionPlan.some((item) => item.tool === "specweft.record_current_diff"));
     assert.ok(prepared.executionPlan.some((item) => item.title === "先读相关源码"));
+    assert.equal(prepared.guardrail.boundaryRequired, true);
+    assert.equal(prepared.guardrail.requirementId, requirement.id);
+    assert.equal(prepared.guardrail.startWorkSegmentInput.requirementId, requirement.id);
+    assert.equal(prepared.guardrail.recordCurrentDiffInput.requirementId, requirement.id);
+    assert.match(prepared.guardrail.recordCurrentDiffInput.title, /登录校验优化/);
+    assert.ok(prepared.guardrail.finalResponseChecklist.some((item) => item.includes("agentReview")));
     assert.match(prepared.agentInstructions, /specweft\.record_current_diff/);
+    assert.match(prepared.agentInstructions, /Guardrail startWorkSegmentInput/);
+    assert.match(prepared.agentInstructions, /Guardrail recordCurrentDiffInput/);
     assert.match(prepared.agentInstructions, new RegExp(requirement.id));
     assert.match(prepared.agentInstructions, /Execution plan/);
   } finally {
@@ -100,8 +108,9 @@ test("locates related files by source content and asks before vague edits", asyn
     const pointer = contentPrepared.codePointers.find((item) => item.path === "service.ts");
     assert.ok(pointer);
     assert.match(pointer?.matchSource ?? "", /content|path\+content/);
-    assert.match(pointer?.preview ?? "", /login validation/);
     assert.ok(pointer?.matchedSignals?.some((signal) => signal.startsWith("content:")));
+    assert.ok(!("preview" in pointer));
+    assert.ok(!("startLine" in pointer));
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });
@@ -200,6 +209,8 @@ test("does not attach an unrelated active requirement to a new task", async () =
     const prepared = await prepareTask(repoPath, "帮我优化登录校验");
 
     assert.doesNotMatch(prepared.requirement.clarifiedGoal, /Memory timeline/);
+    assert.equal(prepared.guardrail.startWorkSegmentInput.task, "帮我优化登录校验");
+    assert.equal(prepared.guardrail.startWorkSegmentInput.requirementId, undefined);
     assert.equal(prepared.memorySuggestions.length, 0);
     assert.ok(prepared.executionPlan.some((item) => item.title === "先定位模块" || item.title === "先读相关源码"));
   } finally {
