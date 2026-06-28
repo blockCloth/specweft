@@ -1,11 +1,15 @@
 import path from "node:path";
 import crypto from "node:crypto";
 import type {
+  CompressionStrategy,
   MemoryHandoff,
+  MemoryCompressionFile,
+  MemoryCompressionRecord,
   MemoryDigest,
   MemoryDigestItem,
   MemoryIndex,
   MemoryIndexItem,
+  ProjectSettings,
   ProjectProfile,
   RequirementRecord,
   RequirementRestore,
@@ -14,6 +18,8 @@ import type {
 import { projectConfigDir } from "../utils/path.js";
 import { evaluateCodeSnapshot } from "../git/change-snapshot.js";
 import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
+import { filterIgnoredPaths, readProjectSettings } from "../settings/project-settings.js";
+import { readJsonFile, writeJsonFile } from "../utils/json.js";
 
 type MemoryFile = {
   sessions: SessionMemory[];
@@ -23,14 +29,16 @@ type MemoryFile = {
 export async function saveSessionMemory(
   repoPath: string,
   input: Omit<SessionMemory, "id" | "createdAt" | "updatedAt" | "expiresAt">,
-  ttlDays = 7,
+  ttlDays?: number,
 ): Promise<SessionMemory> {
+  const settings = await readProjectSettings(repoPath);
   const file = await readMemoryFile(repoPath);
   const now = createNextMemoryTimestamp(file.sessions);
-  // 默认 7 天过期，符合“短期需求上下文恢复”的产品定位。
-  const expiresAt = new Date(now.getTime() + ttlDays * 24 * 60 * 60 * 1000);
+  const retentionDays = ttlDays ?? settings.changeRecording.retentionDays;
+  const expiresAt = new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000);
   const session: SessionMemory = {
     ...input,
+    changedFiles: filterIgnoredPaths(input.changedFiles, settings),
     id: createId(`${input.projectId}:${input.title}:${now.toISOString()}`),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -49,17 +57,19 @@ export async function recallSessions(
   keyword: string,
   requirementId?: string,
 ): Promise<SessionMemory[]> {
+  const settings = await readProjectSettings(repoPath);
   const file = await readActiveMemoryFile(repoPath);
   const normalized = keyword.trim().toLowerCase();
   const sessions = requirementId
     ? file.sessions.filter((session) => session.requirementId === requirementId)
     : file.sessions;
+  const searchableSessions = sanitizeSessionsForSettings(sessions, settings);
 
   if (!normalized) {
-    return hydrateCodeStatuses(repoPath, sortRecent(sessions));
+    return hydrateCodeStatuses(repoPath, sortRecent(searchableSessions));
   }
 
-  return hydrateCodeStatuses(repoPath, sortRecent(sessions
+  return hydrateCodeStatuses(repoPath, sortRecent(searchableSessions
     .filter((session) => {
       // 把标题、摘要、关键词、改动文件拼成一个可搜索文本。
       const haystack = [
@@ -76,8 +86,9 @@ export async function recallSessions(
 }
 
 export async function listSessionMemories(repoPath: string): Promise<SessionMemory[]> {
+  const settings = await readProjectSettings(repoPath);
   const file = await readActiveMemoryFile(repoPath);
-  return hydrateCodeStatuses(repoPath, sortRecent(file.sessions));
+  return hydrateCodeStatuses(repoPath, sortRecent(sanitizeSessionsForSettings(file.sessions, settings)));
 }
 
 // 记忆索引是给 Agent 的“总入口”：只暴露摘要、关键词、相关文件和恢复提示，
@@ -87,8 +98,9 @@ export async function createMemoryIndex(
   profile: ProjectProfile,
   limit = 20,
 ): Promise<MemoryIndex> {
+  const settings = await readProjectSettings(repoPath);
   const allSessions = await listSessionMemories(repoPath);
-  const sessions = allSessions.slice(0, Math.max(1, limit));
+  const sessions = allSessions.slice(0, Math.max(1, Math.min(limit, settings.contextMemory.maxRetainedTurns)));
   const items = sessions.map((session) => createMemoryIndexItem(session));
 
   return {
@@ -108,10 +120,32 @@ export async function createMemoryDigest(
   profile: ProjectProfile,
   limit = 20,
 ): Promise<MemoryDigest> {
+  const settings = await readProjectSettings(repoPath);
   const sessions = await listSessionMemories(repoPath);
   const grouped = groupSessionsForDigest(sessions);
+  const compressionRecords: MemoryCompressionRecord[] = [];
+  // 压缩记录会写同一个文件。顺序写入可以避免多个需求线同时首次压缩时互相覆盖。
+  for (const [id, groupSessions] of grouped.entries()) {
+    const record = await ensureCompressionRecord(repoPath, id, groupSessions, settings);
+    if (record) {
+      compressionRecords.push(record);
+    }
+  }
+  const latestCompressionFile = await readCompressionFile(repoPath);
+  const compressionByGroup = new Map(
+    compressionRecords
+      .filter((record): record is MemoryCompressionRecord => Boolean(record))
+      .map((record) => [compressionRecordGroupId(record), record]),
+  );
+  const compressionCountByGroup = countCompressionRecordsByGroup(latestCompressionFile.records);
   const items = [...grouped.entries()]
-    .map(([id, groupSessions]) => createMemoryDigestItem(id, groupSessions))
+    .map(([id, groupSessions]) => createMemoryDigestItem(
+      id,
+      groupSessions,
+      settings,
+      compressionByGroup.get(id),
+      compressionCountByGroup.get(id) ?? 0,
+    ))
     .sort((left, right) => right.latestUpdatedAt.localeCompare(left.latestUpdatedAt))
     .slice(0, Math.max(1, limit));
 
@@ -119,8 +153,14 @@ export async function createMemoryDigest(
     projectId: profile.id,
     projectName: profile.name,
     generatedAt: new Date().toISOString(),
+    settings: {
+      maxRetainedTurns: settings.contextMemory.maxRetainedTurns,
+      compressionStrategy: settings.contextMemory.compressionStrategy,
+      ignorePaths: settings.contextMemory.ignorePaths,
+    },
     totalMemories: sessions.length,
     totalThreads: grouped.size,
+    totalCompressionCount: latestCompressionFile.records.length,
     items,
     summary: createMemoryDigestSummary(profile, sessions.length, grouped.size, items),
   };
@@ -135,10 +175,17 @@ export async function restoreRequirementMemory(
     limit?: number;
   },
 ): Promise<RequirementRestore> {
-  const limit = Math.max(1, input.limit ?? 5);
+  const settings = await readProjectSettings(repoPath);
+  const limit = Math.max(1, Math.min(input.limit ?? 5, settings.contextMemory.maxRetainedTurns));
   const sessions = input.keyword?.trim()
     ? await recallSessions(repoPath, input.keyword, input.requirement?.id)
     : await readRecentSessions(repoPath, input.requirement?.id);
+  const compression = await ensureCompressionRecord(
+    repoPath,
+    createRequirementGroupId(input.requirement, sessions),
+    sessions,
+    settings,
+  );
   const selectedSessions = sessions.slice(0, limit);
   const handoff = await createMemoryHandoff(
     repoPath,
@@ -152,6 +199,7 @@ export async function restoreRequirementMemory(
     requirement: input.requirement,
     sessions: selectedSessions,
     handoff,
+    compression,
     summary: createRestoreSummary(profile, selectedSessions, input.keyword, input.requirement),
   };
 }
@@ -164,14 +212,22 @@ export async function createMemoryHandoff(
   limit = 5,
   requirement?: RequirementRecord,
 ): Promise<MemoryHandoff> {
+  const settings = await readProjectSettings(repoPath);
+  const cappedLimit = Math.max(1, Math.min(limit, settings.contextMemory.maxRetainedTurns));
   const sessions = keyword?.trim()
     ? await recallSessions(repoPath, keyword, requirement?.id)
     : await readRecentSessions(repoPath, requirement?.id);
-  const selectedSessions = sessions.slice(0, Math.max(1, limit));
+  const compression = await ensureCompressionRecord(
+    repoPath,
+    createRequirementGroupId(requirement, sessions),
+    sessions,
+    settings,
+  );
+  const selectedSessions = sessions.slice(0, cappedLimit);
   const keywords = uniqueFlat(selectedSessions.map((session) => session.keywords));
   const changedFiles = uniqueFlat(selectedSessions.map((session) => session.changedFiles));
   const codeStatusSummary = createCodeStatusSummary(selectedSessions);
-  const summary = createHandoffSummary(profile, selectedSessions, keyword);
+  const summary = createHandoffSummary(profile, selectedSessions, keyword, compression);
 
   return {
     projectId: profile.id,
@@ -184,7 +240,7 @@ export async function createMemoryHandoff(
     changedFiles,
     codeStatusSummary,
     summary,
-    prompt: createHandoffPrompt(profile, selectedSessions, summary, keyword),
+    prompt: createHandoffPrompt(profile, selectedSessions, summary, keyword, compression),
   };
 }
 
@@ -204,6 +260,26 @@ function memoryPath(repoPath: string): string {
   return path.join(projectConfigDir(repoPath), "memory.json");
 }
 
+function compressionPath(repoPath: string): string {
+  return path.join(projectConfigDir(repoPath), "memory-compressions.json");
+}
+
+async function readCompressionFile(repoPath: string): Promise<MemoryCompressionFile> {
+  return (
+    (await readJsonFile<MemoryCompressionFile>(compressionPath(repoPath))) ?? {
+      version: 1,
+      records: [],
+    }
+  );
+}
+
+async function writeCompressionFile(repoPath: string, file: MemoryCompressionFile): Promise<void> {
+  await writeJsonFile(compressionPath(repoPath), {
+    version: 1,
+    records: sortRecentCompressionRecords(file.records).slice(0, 500),
+  });
+}
+
 function createNextMemoryTimestamp(sessions: SessionMemory[]): Date {
   const latest = sessions.reduce((max, session) => {
     const updatedAt = new Date(session.updatedAt).getTime();
@@ -214,10 +290,11 @@ function createNextMemoryTimestamp(sessions: SessionMemory[]): Date {
 }
 
 async function readRecentSessions(repoPath: string, requirementId?: string): Promise<SessionMemory[]> {
+  const settings = await readProjectSettings(repoPath);
   const sessions = (await readActiveMemoryFile(repoPath)).sessions;
-  return hydrateCodeStatuses(repoPath, sortRecent(requirementId
+  return hydrateCodeStatuses(repoPath, sortRecent(sanitizeSessionsForSettings(requirementId
     ? sessions.filter((session) => session.requirementId === requirementId)
-    : sessions));
+    : sessions, settings)));
 }
 
 async function readActiveMemoryFile(repoPath: string): Promise<MemoryFile> {
@@ -244,10 +321,15 @@ function sortRecent(sessions: SessionMemory[]): SessionMemory[] {
   return [...sessions].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
+function sortRecentCompressionRecords(records: MemoryCompressionRecord[]): MemoryCompressionRecord[] {
+  return [...records].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 function createHandoffSummary(
   profile: ProjectProfile,
   sessions: SessionMemory[],
   keyword?: string,
+  compression?: MemoryCompressionRecord,
 ): string {
   if (sessions.length === 0) {
     return keyword?.trim()
@@ -258,8 +340,11 @@ function createHandoffSummary(
   const titles = sessions.map((session) => session.title).slice(0, 3).join("; ");
   const files = uniqueFlat(sessions.map((session) => session.changedFiles)).slice(0, 6);
   const fileText = files.length ? ` Key files: ${files.join(", ")}.` : "";
+  const compressionText = compression
+    ? ` Older context was compressed with ${compression.strategy}: ${compression.summary}`
+    : "";
 
-  return `Recovered ${sessions.length} recent SpecWeft memory item(s) for ${profile.name}. Recent focus: ${titles}.${fileText}`;
+  return `Recovered ${sessions.length} recent SpecWeft memory item(s) for ${profile.name}. Recent focus: ${titles}.${fileText}${compressionText}`;
 }
 
 function createMemoryIndexItem(session: SessionMemory): MemoryIndexItem {
@@ -289,16 +374,25 @@ function groupSessionsForDigest(sessions: SessionMemory[]): Map<string, SessionM
 
   for (const session of sessions) {
     const key = session.requirementId
-      ?? `keyword:${session.keywords[0] ?? session.title}`;
+      ? `requirement:${session.requirementId}`
+      : `keyword:${session.keywords[0] ?? session.title}`;
     grouped.set(key, [...(grouped.get(key) ?? []), session]);
   }
 
   return grouped;
 }
 
-function createMemoryDigestItem(id: string, sessions: SessionMemory[]): MemoryDigestItem {
+function createMemoryDigestItem(
+  id: string,
+  sessions: SessionMemory[],
+  settings: ProjectSettings,
+  compression?: MemoryCompressionRecord,
+  compressionCount = 0,
+): MemoryDigestItem {
   const sortedSessions = sortRecent(sessions);
   const latest = sortedSessions[0] as SessionMemory;
+  const retainedSessions = sortedSessions.slice(0, settings.contextMemory.maxRetainedTurns);
+  const omittedSessionCount = Math.max(0, sortedSessions.length - retainedSessions.length);
   const keywords = uniqueFlat(sortedSessions.map((session) => session.keywords)).slice(0, 10);
   const keyFiles = rankFilesByFrequency(sortedSessions).slice(0, 10);
   const statusCounts = countCodeStatuses(sortedSessions);
@@ -313,6 +407,10 @@ function createMemoryDigestItem(id: string, sessions: SessionMemory[]): MemoryDi
     requirementTitle: latest.requirementTitle,
     title,
     latestSummary: latest.summary,
+    compressedSummary: compression?.summary,
+    compressionCount,
+    retainedSessionCount: retainedSessions.length,
+    omittedSessionCount,
     keywords,
     keyFiles,
     sessionCount: sortedSessions.length,
@@ -320,6 +418,107 @@ function createMemoryDigestItem(id: string, sessions: SessionMemory[]): MemoryDi
     latestUpdatedAt: latest.updatedAt,
     restoreHint,
   };
+}
+
+async function ensureCompressionRecord(
+  repoPath: string,
+  groupId: string,
+  sessions: SessionMemory[],
+  settings: ProjectSettings,
+): Promise<MemoryCompressionRecord | undefined> {
+  if (settings.contextMemory.compressionStrategy === "none") {
+    return undefined;
+  }
+
+  const sortedSessions = sortRecent(sessions);
+  const retainedSessionCount = Math.min(sortedSessions.length, settings.contextMemory.maxRetainedTurns);
+  const omitted = sortedSessions.slice(retainedSessionCount);
+  if (omitted.length === 0) {
+    return undefined;
+  }
+
+  const latest = sortedSessions[0];
+  const recordId = createCompressionId(groupId, settings.contextMemory.compressionStrategy, retainedSessionCount, omitted);
+  const file = await readCompressionFile(repoPath);
+  const existing = file.records.find((record) => record.id === recordId);
+  if (existing) {
+    return existing;
+  }
+
+  const record: MemoryCompressionRecord = {
+    id: recordId,
+    requirementId: latest?.requirementId,
+    requirementTitle: latest?.requirementTitle,
+    strategy: settings.contextMemory.compressionStrategy,
+    sourceSessionCount: sortedSessions.length,
+    retainedSessionCount,
+    omittedSessionCount: omitted.length,
+    summary: createCompressionSummary(settings.contextMemory.compressionStrategy, omitted),
+    keywords: uniqueFlat(omitted.map((session) => session.keywords)).slice(0, 12),
+    keyFiles: rankFilesByFrequency(omitted).slice(0, 12),
+    createdAt: new Date().toISOString(),
+  };
+
+  file.records.push(record);
+  await writeCompressionFile(repoPath, file);
+  return record;
+}
+
+function createCompressionSummary(strategy: CompressionStrategy, omittedSessions: SessionMemory[]): string {
+  const titles = omittedSessions.slice(0, 4).map((session) => session.title).join("; ");
+  const files = rankFilesByFrequency(omittedSessions).slice(0, 6);
+  const fileText = files.length ? ` Key historical files: ${files.join(", ")}.` : "";
+
+  if (strategy === "sliding-window") {
+    return `Sliding-window removed ${omittedSessions.length} older memory item(s) from direct restore. Older focus: ${titles || "none"}.${fileText}`;
+  }
+
+  return `Summarized ${omittedSessions.length} older memory item(s). Historical focus: ${titles || "none"}.${fileText}`;
+}
+
+function countCompressionRecordsByGroup(records: MemoryCompressionRecord[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const groupId = compressionRecordGroupId(record);
+    counts.set(groupId, (counts.get(groupId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function compressionRecordGroupId(record: MemoryCompressionRecord): string {
+  if (record.requirementId) {
+    return `requirement:${record.requirementId}`;
+  }
+
+  return record.id.split(":").slice(0, -1).join(":");
+}
+
+function createCompressionId(
+  groupId: string,
+  strategy: CompressionStrategy,
+  retainedSessionCount: number,
+  omittedSessions: SessionMemory[],
+): string {
+  const source = omittedSessions.map((session) => `${session.id}:${session.updatedAt}`).join("|");
+  return `${groupId}:${crypto.createHash("sha256").update(`${strategy}:${retainedSessionCount}:${source}`).digest("hex").slice(0, 12)}`;
+}
+
+function createRequirementGroupId(
+  requirement: RequirementRecord | undefined,
+  sessions: SessionMemory[],
+): string {
+  const latest = sessions[0];
+  if (requirement?.id || latest?.requirementId) {
+    return `requirement:${requirement?.id ?? latest?.requirementId}`;
+  }
+  return `keyword:${latest?.keywords[0] ?? latest?.title ?? "unscoped"}`;
+}
+
+function sanitizeSessionsForSettings(sessions: SessionMemory[], settings: ProjectSettings): SessionMemory[] {
+  return sessions.map((session) => ({
+    ...session,
+    changedFiles: filterIgnoredPaths(session.changedFiles, settings),
+  }));
 }
 
 function rankFilesByFrequency(sessions: SessionMemory[]): string[] {
@@ -440,6 +639,7 @@ function createHandoffPrompt(
   sessions: SessionMemory[],
   summary: string,
   keyword?: string,
+  compression?: MemoryCompressionRecord,
 ): string {
   if (sessions.length === 0) {
     return [
@@ -479,12 +679,15 @@ function createHandoffPrompt(
     `Continue from this SpecWeft handoff for project "${profile.name}".`,
     keyword?.trim() ? `Search keyword: ${keyword.trim()}.` : "Use the most recent valid memories.",
     summary,
+    compression ? `Compressed older context: ${compression.summary}` : undefined,
+    compression?.keywords.length ? `Compressed keywords: ${compression.keywords.join(", ")}` : undefined,
+    compression?.keyFiles.length ? `Compressed key files: ${compression.keyFiles.join(", ")}` : undefined,
     "",
     "Recovered memories:",
     sessionBlocks.join("\n\n"),
     "",
     "Before editing: inspect the current git diff, explain how the recovered context affects the new task, then keep new changes scoped to the current requirement.",
-  ].join("\n");
+  ].filter((line) => line !== undefined).join("\n");
 }
 
 function uniqueFlat(values: string[][]): string[] {

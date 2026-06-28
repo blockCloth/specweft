@@ -5,6 +5,8 @@ SpecWeft is intentionally split into stable layers:
 ```text
 CLI / Web / MCP adapters
         |
+  Agent Harness templates
+        |
       Core
         |
 Scanner / Pool / Capability Center / Recommender / Diff / Memory / Policy
@@ -19,6 +21,32 @@ The rule is simple:
 - storage stays local-first
 
 This keeps the CLI, Web UI, and MCP server on the same behavior model. Desktop and editor-plugin packaging are intentionally out of scope for the current version.
+
+## Agent Harness Layer
+
+SpecWeft treats CLI commands and MCP tools as the stable capability layer. Agent Harness files are the project-local UX layer that lets Codex and Claude discover the right workflow without making the user remember every command.
+
+`specweft init` writes:
+
+```text
+.agents/skills/specweft-*/SKILL.md
+.codex/skills/specweft-*/SKILL.md
+.codex/prompts/specweft-*.md
+.claude/skills/specweft-*/SKILL.md
+.claude/commands/specweft/*.md
+```
+
+The Harness layer has three jobs:
+
+```text
+auto-trigger Skills -> tell the agent when to call prepare/restore/record tools
+manual prompts/commands -> give the user short review/continue/restore/finish entry points
+shared .agents skills -> keep cross-client behavior in one readable place
+```
+
+It must not duplicate business logic. A Skill or command should name the trigger, call order, and output expectation. The tested behavior still lives in `@specweft/core`, and the live execution still goes through the SpecWeft MCP tools.
+
+The Web overview renders an Agent bootstrap context panel from the same `createBootstrapSession` data that backs `specweft.bootstrap_session`. This is intentionally user-visible: a beginner can see the exact project profile, runtime assembly, workflow, and memory digest that Codex or Claude should read when a thread starts.
 
 ## MCP Adapter
 
@@ -81,6 +109,8 @@ user request
   -> likely files
   -> task-specific Skill suggestions
   -> lightweight memory matches
+  -> guardrail.startWorkSegmentInput
+  -> guardrail.recordCurrentDiffInput
   -> agent instructions
 ```
 
@@ -90,7 +120,7 @@ user request
 packages/core/src/task/task-preparer.ts
 ```
 
-It stays rule-based in v1 so the result is explainable and works without an LLM key. The MCP marketplace is optional enrichment; it should not be required for the normal beginner workflow.
+It stays rule-based in v1 so the result is explainable and works without an LLM key. The `guardrail` field is intentionally structured JSON: agents should pass those exact inputs to `specweft.start_work_segment` before editing and `specweft.record_current_diff` after editing, instead of reconstructing requirement ids or titles from prose. The MCP marketplace is optional enrichment; it should not be required for the normal beginner workflow.
 
 ## Memory Index And Restore
 
@@ -107,14 +137,31 @@ Memory is intentionally split into a small index and on-demand restoration:
 
 The digest is the default long-term memory entrance. The index is still available for recent raw entries. This prevents long-running projects from pushing every historical review into the agent context. Full review reports stay available by path, but the default context only gets summaries and restore handles.
 
+## Memory Protection
+
+Requirement memory can be protected with a local key:
+
+```text
+SPECWEFT_MEMORY_KEY
+  -> AES-256-GCM secure JSON
+  -> .specweft/memory.json
+  -> .specweft/requirements.json
+  -> .specweft/work-segments.json
+  -> .specweft/agent-activity.json
+```
+
+The protection layer is optional in v1. Without a key, these files remain readable JSON for easier debugging. When the key is configured, secure JSON is used automatically for future writes, and `specweft protect` migrates existing plaintext state. Markdown review reports stay plaintext by design in v1 because they are the primary human review artifact.
+
 ## Work Segments
 
 Work segments are lightweight request boundaries for uncommitted changes:
 
 ```text
 specweft.prepare_task
+  -> guardrail.startWorkSegmentInput
   -> specweft.start_work_segment
   -> code edits
+  -> guardrail.recordCurrentDiffInput
   -> specweft.record_current_diff
   -> segment closes with reviewPath + memoryId
 ```
@@ -193,9 +240,9 @@ git diff -> active requirement -> active work segment -> structured review draft
                               -> closes work segment with reviewPath + memoryId
 ```
 
-The CLI prints the structured review as readable Chinese text. The Web UI renders the escaped HTML report directly, so the browser does not need to parse Markdown or inspect JSON.
+The CLI prints a context-first review digest as readable Chinese text: requirement context, one-line summary, requirement/feature sections, why it changed, implementation approach, reading entries, notes, and validation. The Web UI shows the same digest first and keeps the detailed HTML report behind an advanced section, so users are not forced through low-level source evidence or batch-level data for routine review.
 
-The MCP tool `specweft.review_current_diff` returns a compact diff summary, changed files, code snapshot, requirement blocks, and a structured review draft. It intentionally omits the full patch text by default, because coding agents should first use the requirement split, source reading guide, and only inspect exact hunks when needed. This keeps routine review calls from consuming the whole model context.
+The MCP tool `specweft.review_current_diff` returns a compact diff summary and an `agentReview` packet first. `agentReview` contains the review digest, requirement/feature sections, read-first files, suggested agent response, and next actions. The full structured review is still available as `advancedReview`, but agents should only use it when the user asks for deeper evidence. Full patch text is intentionally omitted from MCP output, so routine review calls do not consume the whole model context.
 
 When an active work segment exists, review generation uses its start snapshot to explain which changed files are new to the current request and which files were already dirty before the segment began. This does not replace requirement or functional grouping; it adds a second axis for review so users can separate “this request changed it” from “this file was already in the working tree”.
 

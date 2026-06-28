@@ -7,6 +7,7 @@ import {
   startWorkSegment,
 } from "@specweft/core";
 import { printJson, printText } from "../output.js";
+import { recordCliActivity } from "./activity.js";
 
 export async function runSegment(
   repoArg: string,
@@ -26,6 +27,19 @@ export async function runSegment(
       task: taskOrTitle ?? requirement?.title ?? "未命名工作段",
       title: taskOrTitle,
     });
+    await recordCliActivity(repoPath, {
+      kind: "start_work_segment",
+      title: "开启工作段",
+      summary: "CLI 已为本次需求记录修改边界，后续 review 可以区分新增改动和已有脏区。",
+      toolName: "specweft segment start",
+      requirementId: result.segment.requirementId,
+      requirementTitle: result.segment.requirementTitle,
+      target: result.segment.title,
+      metadata: {
+        baselineChangedFiles: result.segment.baselineChangedFiles,
+        interruptedSegmentId: result.interruptedSegment?.id,
+      },
+    });
     printSegmentResult(result, asJson);
     return;
   }
@@ -35,6 +49,22 @@ export async function runSegment(
       status: "recorded",
       title: taskOrTitle,
     });
+    if (segment) {
+      await recordCliActivity(repoPath, {
+        kind: "complete_work_segment",
+        title: "完成工作段",
+        summary: "CLI 已结束当前工作段，记录本段新增和沿用的修改文件。",
+        toolName: "specweft segment complete",
+        requirementId: segment.requirementId,
+        requirementTitle: segment.requirementTitle,
+        target: segment.title,
+        metadata: {
+          status: segment.status,
+          newChangedFiles: segment.newChangedFiles,
+          carriedChangedFiles: segment.carriedChangedFiles,
+        },
+      });
+    }
     if (asJson) {
       printJson({ segment });
       return;
@@ -50,6 +80,23 @@ export async function runSegment(
       status: "abandoned",
       title: taskOrTitle,
     });
+    if (segment) {
+      await recordCliActivity(repoPath, {
+        kind: "complete_work_segment",
+        status: "attention",
+        title: "放弃工作段",
+        summary: "CLI 已将当前工作段标记为放弃，后续讲解会把它视为非正常完成边界。",
+        toolName: "specweft segment abandon",
+        requirementId: segment.requirementId,
+        requirementTitle: segment.requirementTitle,
+        target: segment.title,
+        metadata: {
+          status: segment.status,
+          newChangedFiles: segment.newChangedFiles,
+          carriedChangedFiles: segment.carriedChangedFiles,
+        },
+      });
+    }
     if (asJson) {
       printJson({ segment });
       return;

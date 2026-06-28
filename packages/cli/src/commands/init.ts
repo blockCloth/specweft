@@ -1,5 +1,6 @@
 import { initializeSpecWeftProject, resolveRepoPath } from "@specweft/core";
 import { printJson, printText } from "../output.js";
+import { recordCliActivity } from "./activity.js";
 
 // 初始化项目接入：项目画像、全局池、默认工具和 agent 指令一次落地。
 export async function runInit(repoArg: string, asJson = false): Promise<void> {
@@ -23,6 +24,21 @@ export async function runInit(repoArg: string, asJson = false): Promise<void> {
     bootstrapTool: "specweft.bootstrap_session",
     nextCommands: result.nextCommands,
   };
+
+  await recordCliActivity(repoPath, {
+    kind: "bootstrap_session",
+    title: "初始化 SpecWeft 项目",
+    summary: "CLI 已生成项目画像、默认能力选择和 Codex/Claude Agent Harness 文件。",
+    toolName: "specweft init",
+    target: repoPath,
+    metadata: {
+      project: result.profile.name,
+      instructionFiles: result.instructionPaths.length,
+      harnessFiles: result.harness.files.length,
+      skills: result.enabled.skills.map((item) => item.id),
+      mcps: result.enabled.mcps.map((item) => item.id),
+    },
+  });
 
   if (asJson) {
     printJson(output);

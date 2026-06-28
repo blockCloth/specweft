@@ -38,6 +38,12 @@ const PROTECTED_FILES: ProtectedFileDefinition[] = [
     fileName: "work-segments.json",
     defaultValue: { version: 1, segments: [] },
   },
+  {
+    id: "agentActivity",
+    label: "Agent activity",
+    fileName: "agent-activity.json",
+    defaultValue: { version: 1, events: [] },
+  },
 ];
 
 export async function getMemoryProtectionStatus(repoPath: string): Promise<MemoryProtectionStatus> {
@@ -124,13 +130,13 @@ function createProtectionWarnings(
   const warnings: string[] = [];
 
   if (!keyConfigured) {
-    warnings.push("SPECWEFT_MEMORY_KEY is not set, so requirement memory is stored as plain local JSON.");
+    warnings.push("未设置 SPECWEFT_MEMORY_KEY，需求记忆会以本地明文 JSON 保存。");
   }
   if (keyConfigured && plaintextFiles > 0) {
-    warnings.push("Some existing memory files are still plaintext. Run specweft protect to migrate them.");
+    warnings.push("仍有历史记忆文件是明文。运行 specweft protect 可迁移为加密存储。");
   }
   if (missingFiles > 0) {
-    warnings.push("Some protected memory files do not exist yet; SpecWeft will create them when needed.");
+    warnings.push("部分记忆状态文件尚未创建；SpecWeft 会在需要时自动创建。");
   }
 
   return warnings;
@@ -143,14 +149,14 @@ function createProtectionSummary(
   missingFiles: number,
 ): string {
   if (keyConfigured && plaintextFiles === 0 && protectedFiles > 0) {
-    return `Requirement memory protection is enabled. ${protectedFiles} file(s) are encrypted.`;
+    return `需求记忆保护已启用，${protectedFiles} 个文件已加密。`;
   }
 
   if (keyConfigured) {
-    return `Memory key is configured. ${protectedFiles} encrypted, ${plaintextFiles} plaintext, ${missingFiles} missing.`;
+    return `已配置记忆密钥：${protectedFiles} 个已加密，${plaintextFiles} 个仍为明文，${missingFiles} 个尚未创建。`;
   }
 
-  return `Requirement memory protection is optional and currently disabled. ${plaintextFiles} plaintext file(s), ${missingFiles} missing.`;
+  return `需求记忆保护是可选项，当前未启用：${plaintextFiles} 个明文文件，${missingFiles} 个尚未创建。`;
 }
 
 function protectedFilePath(repoPath: string, definition: ProtectedFileDefinition): string {

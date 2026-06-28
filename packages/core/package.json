@@ -1,7 +1,7 @@
 {
   "name": "@specweft/core",
   "version": "0.1.1",
-  "description": "Core project profiling, tool assembly, review, and memory logic for SpecWeft.",
+  "description": "Core task preparation, Skill routing, review, memory, Agent Harness, and MCP assembly logic for SpecWeft.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,9 @@
     "mcp",
     "codex",
     "claude",
-    "code-review"
+    "skills",
+    "code-review",
+    "memory"
   ],
   "engines": {
     "node": ">=20"
@@ -35,9 +37,11 @@
     }
   },
   "files": [
+    "dist/activity/**/*",
     "dist/assembly/**/*",
     "dist/bootstrap/**/*",
     "dist/capabilities/**/*",
+    "dist/connect/**/*",
     "dist/diff/**/*",
     "dist/git/**/*",
     "dist/harness/**/*",
@@ -54,6 +58,7 @@
     "dist/security/**/*",
     "dist/schemas/**/*",
     "dist/selection/**/*",
+    "dist/settings/**/*",
     "dist/status/**/*",
     "dist/task/**/*",
     "dist/utils/**/*",

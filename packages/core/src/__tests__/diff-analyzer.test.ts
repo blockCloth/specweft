@@ -10,6 +10,7 @@ import { createRequirement } from "../requirements/requirement-manager.js";
 import { saveSessionMemory } from "../memory/session-memory.js";
 import { startWorkSegment } from "../work-segments/work-segment-manager.js";
 import { getRecordingStatus } from "../recording/recording-status.js";
+import { updateProjectSettings } from "../settings/project-settings.js";
 import type { ProjectProfile } from "../schemas/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -126,6 +127,52 @@ test("creates an agent review packet that is digest-first and patch-free", async
   }
 });
 
+test("keeps default review guidance focused on main chain files", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-main-chain-review-"));
+
+  try {
+    await execFileAsync("git", ["init"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.email", "specweft@example.com"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.name", "SpecWeft"], { cwd: repoPath });
+    await mkdir(path.join(repoPath, "packages/web/src"), { recursive: true });
+    await mkdir(path.join(repoPath, "packages/core/src/diff"), { recursive: true });
+    await mkdir(path.join(repoPath, "packages/core/src/__tests__"), { recursive: true });
+    await writeFile(path.join(repoPath, "packages/web/src/ui.ts"), "export const ui = 1;\n", "utf-8");
+    await writeFile(path.join(repoPath, "packages/core/src/diff/diff-analyzer.ts"), "export const review = 1;\n", "utf-8");
+    await writeFile(path.join(repoPath, "packages/core/src/__tests__/diff-analyzer.test.ts"), "export const test = 1;\n", "utf-8");
+    await writeFile(path.join(repoPath, "package.json"), "{\"name\":\"main-chain\"}\n", "utf-8");
+    await writeFile(path.join(repoPath, "README.md"), "# Main Chain\n", "utf-8");
+    await execFileAsync("git", ["add", "."], { cwd: repoPath });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repoPath });
+
+    await writeFile(path.join(repoPath, "packages/web/src/ui.ts"), "export const ui = 2;\nexport const panel = true;\n", "utf-8");
+    await writeFile(path.join(repoPath, "packages/core/src/diff/diff-analyzer.ts"), "export const review = 2;\nexport const digest = true;\n", "utf-8");
+    await writeFile(path.join(repoPath, "packages/core/src/__tests__/diff-analyzer.test.ts"), "export const test = 2;\n", "utf-8");
+    await writeFile(path.join(repoPath, "package.json"), "{\"name\":\"main-chain\",\"type\":\"module\"}\n", "utf-8");
+    await writeFile(path.join(repoPath, "README.md"), "# Main Chain\n\nUpdated docs.\n", "utf-8");
+
+    const report = await createReviewReport(repoPath, profile(repoPath), "主链路讲解");
+    const diff = await analyzeCurrentDiff(repoPath);
+    const packet = createAgentReviewPacket({
+      title: report.title,
+      review: report.review,
+      diff,
+      requirement: report.requirement,
+      reportPath: report.reportPath,
+    });
+    const readingPaths = report.review.reviewDigest.readingPath.map((item) => item.path);
+
+    assert.ok(readingPaths.length <= 3);
+    assert.ok(readingPaths.includes("packages/web/src/ui.ts"));
+    assert.ok(readingPaths.includes("packages/core/src/diff/diff-analyzer.ts"));
+    assert.ok(packet.changedFiles.length <= 3);
+    assert.deepEqual(packet.changedFiles, readingPaths);
+    assert.ok(report.review.mainChanges.some((item) => item.includes("另有 2 个配套文件")));
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
 test("includes untracked files in current diff analysis", async () => {
   const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-review-untracked-"));
 
@@ -139,6 +186,37 @@ test("includes untracked files in current diff analysis", async () => {
     assert.equal(diff.changedFiles.find((file) => file.path === "new-file.ts")?.changeType, "added");
     assert.equal(diff.stats.files, 1);
     assert.equal(diff.stats.additions, 1);
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("applies ignored paths to diff analysis and persisted review memory", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-review-ignored-paths-"));
+
+  try {
+    await execFileAsync("git", ["init"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.email", "specweft@example.com"], { cwd: repoPath });
+    await execFileAsync("git", ["config", "user.name", "SpecWeft"], { cwd: repoPath });
+    await writeFile(path.join(repoPath, "index.ts"), "export const value = 1;\n", "utf-8");
+    await execFileAsync("git", ["add", "index.ts"], { cwd: repoPath });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: repoPath });
+    await updateProjectSettings(repoPath, {
+      contextMemory: {
+        ignorePaths: ["dist/"],
+      },
+    });
+    await mkdir(path.join(repoPath, "dist"), { recursive: true });
+    await writeFile(path.join(repoPath, "index.ts"), "export const value = 2;\n", "utf-8");
+    await writeFile(path.join(repoPath, "dist", "bundle.js"), "generated\n", "utf-8");
+
+    const diff = await analyzeCurrentDiff(repoPath);
+    const report = await createReviewReport(repoPath, profile(repoPath), "Ignored path review");
+
+    assert.ok(diff.changedFiles.some((file) => file.path === "index.ts"));
+    assert.ok(!diff.changedFiles.some((file) => file.path.startsWith("dist/")));
+    assert.ok(report.memory.changedFiles.includes("index.ts"));
+    assert.ok(!report.memory.changedFiles.some((file) => file.startsWith("dist/")));
   } finally {
     await rm(repoPath, { recursive: true, force: true });
   }

@@ -364,7 +364,7 @@ async function searchMarketplace(keyword: string, options: SearchOptions): Promi
   }
 
   const [official, github] = await Promise.allSettled([
-    searchOfficialRegistry(keyword, options),
+    searchOfficialRegistry(options),
     searchGithubMcpServers(keyword, options),
   ]);
   const mcps: MarketplaceMcp[] = [];
@@ -382,10 +382,7 @@ async function searchMarketplace(keyword: string, options: SearchOptions): Promi
   return dedupeMcps(mcps);
 }
 
-async function searchOfficialRegistry(
-  keyword: string,
-  options: SearchOptions,
-): Promise<MarketplaceMcp[]> {
+async function searchOfficialRegistry(options: SearchOptions): Promise<MarketplaceMcp[]> {
   const url = new URL(OFFICIAL_REGISTRY_API_URL);
   // 官方 Registry API 当前是聚合器读取接口，没有稳定搜索参数；先取一页再本地过滤，失败时还有 GitHub 兜底。
   url.searchParams.set("limit", String(Math.max(50, Math.min((options.limit ?? DEFAULT_LIMIT) * 8, 100))));

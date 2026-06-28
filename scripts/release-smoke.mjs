@@ -31,6 +31,8 @@ await execFileAsync("npm", ["install", tarballs.core, tarballs.web, tarballs.cli
   env,
   maxBuffer: 20 * 1024 * 1024,
 });
+await assertInstalledPackageReadmes(workspaceDir);
+await assertInstalledPackageMetadata(workspaceDir);
 await mkdir(projectDir, { recursive: true });
 await writeFile(
   path.join(projectDir, "package.json"),
@@ -57,6 +59,12 @@ const binPath = path.join(workspaceDir, "node_modules", ".bin", "specweft");
 
 const help = await runSpecWeft(["--help"], workspaceDir);
 assertIncludes(help, "SpecWeft", "help should print CLI usage");
+assertIncludes(help, "用法:", "help should default to Chinese usage copy");
+assertIncludes(help, "在 Codex/Claude 修改代码前生成上下文包", "help should describe task preparation in Chinese");
+assertIncludes(help, "分析当前 git diff，并生成本次修改说明", "help should describe review in Chinese");
+const englishHelp = await runSpecWeft(["--help"], workspaceDir, { ...env, SPECWEFT_LANG: "en" });
+assertIncludes(englishHelp, "Usage:", "SPECWEFT_LANG=en should opt into English help");
+assertIncludes(englishHelp, "Prepare a Context Pack", "English help should still describe task preparation");
 const shortHelp = await runSpecWeft(["-h"], workspaceDir);
 assertIncludes(shortHelp, "SpecWeft", "short help should print CLI usage");
 const version = await runSpecWeft(["--version"], workspaceDir);
@@ -96,6 +104,7 @@ assertIncludes(doctor, "接入状态正常", "doctor should report a healthy ini
 assertIncludes(doctor, "specweft.prepare_task", "doctor should mention the expected MCP workflow");
 assertIncludes(doctor, "guardrail.startWorkSegmentInput", "doctor should mention guardrail work segment boundaries");
 assertIncludes(doctor, "guardrail.recordCurrentDiffInput", "doctor should mention guardrail diff recording");
+assertIncludes(doctor, "需求记忆保护是可选项", "doctor memory protection copy should be localized");
 await rm(path.join(projectDir, "AGENTS.md"), { force: true });
 await rm(path.join(projectDir, "CLAUDE.md"), { force: true });
 const doctorWithoutCopies = await runSpecWeft(["doctor"], projectDir);
@@ -126,6 +135,10 @@ await assertFileIncludes(
   path.join(workspaceDir, "node_modules", "@specweft", "core", "dist", "security", "memory-protection.js"),
   "protectMemoryFiles",
 );
+await assertFileIncludes(
+  path.join(workspaceDir, "node_modules", "@specweft", "core", "dist", "activity", "agent-activity.js"),
+  "recordAgentActivity",
+);
 
 const digest = await runSpecWeft(["digest"], projectDir);
 assertIncludes(digest, "totalThreads", "digest should expose requirement-grouped memory metadata");
@@ -141,6 +154,7 @@ const protectedEnv = {
 const protectedOutput = await runSpecWeft(["protect"], projectDir, protectedEnv);
 assertIncludes(protectedOutput, "已加密", "protect should encrypt local memory state when a key is configured");
 await assertFileIncludes(path.join(projectDir, ".specweft", "memory.json"), "specweftSecureJson");
+await assertFileIncludes(path.join(projectDir, ".specweft", "agent-activity.json"), "specweftSecureJson");
 env.SPECWEFT_MEMORY_KEY = protectedEnv.SPECWEFT_MEMORY_KEY;
 
 const dossier = await runSpecWeft(["dossier"], projectDir);
@@ -151,13 +165,22 @@ const dossierJson = await runSpecWeft(["dossier", "--json"], projectDir);
 assertIncludes(dossierJson, "totalRequirements", "dossier --json should expose requirement totals");
 assertIncludes(dossierJson, "items", "dossier --json should expose requirement dossier items");
 
-const prepare = await runSpecWeft(["prepare", "--task", "explain login change"], projectDir);
-assertIncludes(prepare, "skillSuggestions", "prepare should expose task Skill suggestions");
-assertIncludes(prepare, "matchedSignals", "prepare should explain why Skills were suggested");
-assertIncludes(prepare, "matchedRequirement", "prepare should expose matched requirement binding metadata");
-assertIncludes(prepare, "executionPlan", "prepare should expose an agent execution plan");
-assertIncludes(prepare, "specweft.start_work_segment", "prepare execution plan should mark task boundaries");
-assertIncludes(prepare, "specweft.record_current_diff", "prepare execution plan should remind agents to record the final diff");
+const prepare = await runSpecWeft(["prepare", "explain login change"], projectDir);
+assertIncludes(prepare, "开始前判定", "prepare should print a human-readable Start Gate by default");
+assertIncludes(prepare, "建议先读", "prepare should print source reading guidance by default");
+assertIncludes(prepare, "推荐执行顺序", "prepare should print the execution plan in readable form");
+assertIncludes(prepare, "specweft.start_work_segment", "prepare readable output should mark task boundaries");
+assertIncludes(prepare, "specweft.record_current_diff", "prepare readable output should remind agents to record the final diff");
+assertIncludes(prepare, "specweft prepare --task", "prepare readable output should point to --json for full context");
+assertNotIncludes(prepare, "Ask:", "prepare readable output should not expose English debug action labels");
+assertNotIncludes(prepare, "Matched by", "prepare readable output should not expose raw English file-match text");
+assertNotIncludes(prepare, "Should the change", "prepare readable output should keep clarification questions localized");
+
+const prepareJson = await runSpecWeft(["prepare", "--task", "explain login change", "--json"], projectDir);
+assertIncludes(prepareJson, "skillSuggestions", "prepare --json should expose task Skill suggestions");
+assertIncludes(prepareJson, "matchedSignals", "prepare --json should explain why Skills were suggested");
+assertIncludes(prepareJson, "matchedRequirement", "prepare --json should expose matched requirement binding metadata");
+assertIncludes(prepareJson, "executionPlan", "prepare --json should expose an agent execution plan");
 
 const emptyReview = await runSpecWeftExpectFailure(["review", "--title", "empty review"], projectDir);
 assertIncludes(emptyReview, "没有未提交的代码改动", "review should not persist empty diffs");
@@ -176,6 +199,23 @@ assertIncludes(review, "高级详情", "review should keep detailed grouping in 
 assertIncludes(review, "当前工作段", "review should mention the active work segment boundary");
 const segmentStatus = await runSpecWeft(["segment", "status"], projectDir);
 assertIncludes(segmentStatus, "release smoke review", "recorded review should close and title the active segment");
+const cliActivity = await readPackedAgentActivity(projectDir, workspaceDir, env);
+assertTruthy(
+  cliActivity.events.some((event) => event.kind === "prepare_task" && event.source === "cli"),
+  "CLI prepare should record agent activity",
+);
+assertTruthy(
+  cliActivity.events.some((event) => event.kind === "start_work_segment" && event.source === "cli"),
+  "CLI segment start should record agent activity",
+);
+assertTruthy(
+  cliActivity.events.some((event) => event.kind === "record_current_diff" && event.source === "cli"),
+  "CLI review should record agent activity",
+);
+assertTruthy(
+  cliActivity.events.every((event) => !JSON.stringify(event).includes("export const ok = false")),
+  "CLI activity should not store source code content",
+);
 
 const compactDossierAfterReview = await runSpecWeft(["dossier", "--json"], projectDir);
 assertIncludes(compactDossierAfterReview, "\"sessions\": []", "compact dossier should not include full session history by default");
@@ -220,6 +260,14 @@ const webProcess = spawn(binPath, ["start", "--port", "4199"], {
 
 try {
   await waitForBootstrap(projectDir, 4199);
+  const webHtml = await fetchText(`http://localhost:4199/?repo=${encodeURIComponent(projectDir)}`);
+  assertIncludes(webHtml, "full-product-home", "packed Web UI should include the product workbench shell");
+  assertIncludes(webHtml, "command-deck", "packed Web UI should include the main command deck");
+  assertIncludes(webHtml, "SpecWeft 工作台", "packed Web UI should include localized workbench copy");
+  assertIncludes(webHtml, "Skill Router", "packed Web UI should include Skill Router copy");
+  assertIncludes(webHtml, "Review Lens", "packed Web UI should include Review Lens copy");
+  assertIncludes(webHtml, "Memory Vault", "packed Web UI should include Memory Vault copy");
+  assertIncludes(webHtml, "Agent Bridge", "packed Web UI should include Agent Bridge copy");
 } finally {
   webProcess.kill("SIGTERM");
 }
@@ -312,6 +360,58 @@ async function assertFileIncludes(filePath, expected) {
   assertIncludes(content, expected, `${filePath} should include ${expected}`);
 }
 
+async function assertInstalledPackageReadmes(installedRoot) {
+  const cliReadme = await readFile(path.join(installedRoot, "node_modules", "specweft", "README.md"), "utf-8");
+  assertIncludes(cliReadme, "Review Lens", "packed CLI README should describe the current Review Lens workflow");
+  assertIncludes(cliReadme, "Memory Vault", "packed CLI README should describe the current memory workflow");
+
+  const webReadme = await readFile(path.join(installedRoot, "node_modules", "@specweft", "web", "README.md"), "utf-8");
+  assertIncludes(webReadme, "SpecWeft Workbench", "packed Web README should describe the current workbench");
+  assertIncludes(webReadme, "Agent Bridge", "packed Web README should describe the connection surface");
+
+  const coreReadme = await readFile(path.join(installedRoot, "node_modules", "@specweft", "core", "README.md"), "utf-8");
+  assertIncludes(coreReadme, "Agent Harness generation", "packed Core README should mention harness generation");
+  assertIncludes(coreReadme, "memory protection", "packed Core README should mention memory protection");
+}
+
+async function assertInstalledPackageMetadata(installedRoot) {
+  const cli = await readInstalledPackageJson(installedRoot, "specweft", "package.json");
+  assertIncludes(cli.description, "Skill workflow", "packed CLI description should reflect the current product positioning");
+  assertTruthy(cli.keywords.includes("skills"), "packed CLI keywords should include skills");
+  assertTruthy(cli.keywords.includes("context"), "packed CLI keywords should include context");
+
+  const web = await readInstalledPackageJson(installedRoot, "@specweft", "web", "package.json");
+  assertIncludes(web.description, "task preparation", "packed Web description should reflect the current workbench");
+  assertTruthy(web.keywords.includes("review"), "packed Web keywords should include review");
+  assertTruthy(web.keywords.includes("memory"), "packed Web keywords should include memory");
+
+  const core = await readInstalledPackageJson(installedRoot, "@specweft", "core", "package.json");
+  assertIncludes(core.description, "Agent Harness", "packed Core description should reflect the current workflow");
+  assertTruthy(core.keywords.includes("skills"), "packed Core keywords should include skills");
+  assertTruthy(core.keywords.includes("memory"), "packed Core keywords should include memory");
+}
+
+async function readInstalledPackageJson(installedRoot, ...relativeParts) {
+  return JSON.parse(
+    await readFile(path.join(installedRoot, "node_modules", ...relativeParts), "utf-8"),
+  );
+}
+
+async function readPackedAgentActivity(repoPath, installedRoot, commandEnv) {
+  const script = [
+    "import { readAgentActivity } from '@specweft/core';",
+    "const activity = await readAgentActivity(process.argv[1], 80);",
+    "console.log(JSON.stringify(activity));",
+  ].join("\n");
+  const result = await execFileAsync(process.execPath, ["--input-type=module", "-e", script, repoPath], {
+    cwd: installedRoot,
+    env: commandEnv,
+    maxBuffer: 20 * 1024 * 1024,
+  });
+
+  return JSON.parse(result.stdout);
+}
+
 async function waitForBootstrap(repoPath, port) {
   const url = `http://localhost:${port}/api/bootstrap?repo=${encodeURIComponent(repoPath)}`;
   let lastError;
@@ -365,6 +465,17 @@ async function waitForTextResponse(url, expected) {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
+async function fetchText(url) {
+  const response = await fetch(url);
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Unexpected response for ${url}: ${response.status} ${body.slice(0, 120)}`);
+  }
+
+  return body;
+}
+
 async function waitForProcessOutput(child, expected) {
   let output = "";
   let lastError;
@@ -392,6 +503,18 @@ async function waitForProcessOutput(child, expected) {
 
 function assertIncludes(value, expected, message) {
   if (!value.includes(expected)) {
+    throw new Error(message);
+  }
+}
+
+function assertNotIncludes(value, expected, message) {
+  if (value.includes(expected)) {
+    throw new Error(message);
+  }
+}
+
+function assertTruthy(value, message) {
+  if (!value) {
     throw new Error(message);
   }
 }

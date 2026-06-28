@@ -22,6 +22,7 @@ import {
 } from "../security/memory-protection.js";
 import { getRecordingStatus } from "../recording/recording-status.js";
 import { createRequirement } from "../requirements/requirement-manager.js";
+import { updateProjectSettings } from "../settings/project-settings.js";
 import type { ProjectProfile } from "../schemas/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -128,6 +129,7 @@ test("migrates existing plaintext memory state with protectMemoryFiles", async (
     assert.ok(result.migratedFiles.some((file) => file.endsWith("memory.json")));
     assert.ok(result.createdFiles.some((file) => file.endsWith("requirements.json")));
     assert.ok(result.createdFiles.some((file) => file.endsWith("work-segments.json")));
+    assert.ok(result.createdFiles.some((file) => file.endsWith("agent-activity.json")));
     assert.match(raw, /specweftSecureJson/);
     assert.doesNotMatch(raw, /This plaintext memory should be encrypted/);
     assert.equal(sessions[0]?.title, "Plain login memory");
@@ -261,6 +263,135 @@ test("creates a lightweight memory index and restores requirement memory on dema
     assert.equal(restored.sessions.length, 1);
     assert.equal(restored.requirement?.id, requirement.id);
     assert.match(restored.handoff.prompt, /Login cleanup review/);
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("applies project memory settings for retention, ignored paths, and compression", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-settings-"));
+
+  try {
+    await updateProjectSettings(repoPath, {
+      changeRecording: {
+        retentionDays: 3,
+      },
+      contextMemory: {
+        maxRetainedTurns: 2,
+        compressionStrategy: "summary",
+        ignorePaths: ["dist/", "node_modules/"],
+      },
+    });
+    const requirement = await createRequirement(repoPath, {
+      projectId: "project",
+      title: "Settings memory",
+      keywords: ["settings"],
+    });
+
+    for (const index of [1, 2, 3, 4]) {
+      await saveSessionMemory(repoPath, {
+        projectId: "project",
+        requirementId: requirement.id,
+        requirementTitle: requirement.title,
+        title: `Settings review ${index}`,
+        keywords: ["settings", `round-${index}`],
+        summary: `Settings summary ${index}.`,
+        changedFiles: [`src/settings-${index}.ts`, "dist/generated.js", "node_modules/pkg/index.js"],
+      });
+    }
+
+    const digest = await createMemoryDigest(repoPath, profile(repoPath));
+    const restored = await restoreRequirementMemory(repoPath, profile(repoPath), {
+      requirement,
+      limit: 10,
+    });
+    const sessions = await recallSessions(repoPath, "settings", requirement.id);
+
+    assert.equal(digest.settings.maxRetainedTurns, 2);
+    assert.equal(digest.totalCompressionCount, 1);
+    assert.equal(digest.items[0]?.sessionCount, 4);
+    assert.equal(digest.items[0]?.retainedSessionCount, 2);
+    assert.equal(digest.items[0]?.omittedSessionCount, 2);
+    assert.equal(digest.items[0]?.compressionCount, 1);
+    assert.match(digest.items[0]?.compressedSummary ?? "", /Summarized 2 older memory/);
+    assert.equal(restored.sessions.length, 2);
+    assert.ok(restored.compression);
+    assert.match(restored.handoff.prompt, /Compressed older context/);
+    assert.ok(sessions.every((session) => !session.changedFiles.some((file) => file.startsWith("dist/") || file.startsWith("node_modules/"))));
+    assert.ok(Date.parse(sessions[0]?.expiresAt ?? "") - Date.parse(sessions[0]?.createdAt ?? "") <= 3 * 24 * 60 * 60 * 1000 + 1000);
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("allows clearing ignored paths in project memory settings", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-clear-ignore-"));
+
+  try {
+    await updateProjectSettings(repoPath, {
+      contextMemory: {
+        ignorePaths: [],
+      },
+    });
+
+    await saveSessionMemory(repoPath, {
+      projectId: "project",
+      title: "Keep generated file memory",
+      keywords: ["generated"],
+      summary: "Generated files should remain when ignored paths are cleared.",
+      changedFiles: ["dist/generated.js"],
+    });
+
+    const sessions = await recallSessions(repoPath, "generated");
+    const digest = await createMemoryDigest(repoPath, profile(repoPath));
+
+    assert.deepEqual(digest.settings.ignorePaths, []);
+    assert.ok(sessions[0]?.changedFiles.includes("dist/generated.js"));
+  } finally {
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("keeps compression records for multiple requirement groups", async () => {
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-memory-multi-compress-"));
+
+  try {
+    await updateProjectSettings(repoPath, {
+      contextMemory: {
+        maxRetainedTurns: 1,
+        compressionStrategy: "summary",
+      },
+    });
+    const firstRequirement = await createRequirement(repoPath, {
+      projectId: "project",
+      title: "First requirement",
+      keywords: ["first"],
+    });
+    const secondRequirement = await createRequirement(repoPath, {
+      projectId: "project",
+      title: "Second requirement",
+      keywords: ["second"],
+    });
+
+    for (const requirement of [firstRequirement, secondRequirement]) {
+      for (const index of [1, 2]) {
+        await saveSessionMemory(repoPath, {
+          projectId: "project",
+          requirementId: requirement.id,
+          requirementTitle: requirement.title,
+          title: `${requirement.title} review ${index}`,
+          keywords: [requirement.keywords[0] ?? requirement.title],
+          summary: `${requirement.title} summary ${index}.`,
+          changedFiles: [`src/${requirement.id}-${index}.ts`],
+        });
+      }
+    }
+
+    const digest = await createMemoryDigest(repoPath, profile(repoPath));
+
+    assert.equal(digest.totalThreads, 2);
+    assert.equal(digest.totalCompressionCount, 2);
+    assert.ok(digest.items.every((item) => item.compressionCount === 1));
   } finally {
     await rm(repoPath, { recursive: true, force: true });
   }

@@ -6,12 +6,33 @@ import {
   type MemoryProtectionStatus,
 } from "@specweft/core";
 import { printText } from "../output.js";
+import { recordCliActivity } from "./activity.js";
 
 export async function runProtect(repoArg: string, statusOnly = false): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
   const result = statusOnly
     ? await getMemoryProtectionStatus(repoPath)
     : await protectMemoryFiles(repoPath);
+
+  if (!statusOnly) {
+    const migration = result as MemoryProtectionResult;
+    await recordCliActivity(repoPath, {
+      kind: "settings_updated",
+      title: "更新记忆保护状态",
+      summary: result.keyConfigured
+        ? "CLI 已迁移需求记忆保护文件，后续会使用本地密钥加密保存。"
+        : "CLI 已检查需求记忆保护状态，但未检测到 SPECWEFT_MEMORY_KEY。",
+      toolName: "specweft protect",
+      status: result.keyConfigured ? "success" : "attention",
+      metadata: {
+        protectedFiles: result.protectedFiles,
+        plaintextFiles: result.plaintextFiles,
+        missingFiles: result.missingFiles,
+        migratedFiles: migration.migratedFiles.length,
+        createdFiles: migration.createdFiles.length,
+      },
+    });
+  }
 
   printText(formatProtectionOutput(repoPath, result));
 }

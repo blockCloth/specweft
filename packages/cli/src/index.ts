@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   }
 
   if (args.command === "prepare") {
-    await runPrepare(args.repo, args.task);
+    await runPrepare(args.repo, args.task, args.json);
     return;
   }
 
@@ -324,9 +324,8 @@ Options:
 }
 
 function shouldUseEnglishHelp(): boolean {
-  const locale = process.env.LC_ALL
-    ?? process.env.LC_MESSAGES
-    ?? process.env.LANG
+  const locale = process.env.SPECWEFT_LANG
+    ?? process.env.SPECWEFT_LOCALE
     ?? "";
 
   return locale.toLowerCase().startsWith("en");

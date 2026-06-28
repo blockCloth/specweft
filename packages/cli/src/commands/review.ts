@@ -5,6 +5,7 @@ import {
   type ReviewReport,
 } from "@specweft/core";
 import { printText } from "../output.js";
+import { recordCliActivity } from "./activity.js";
 
 // review 会产出两份东西：
 // 1. Markdown 报告，方便人阅读本次改动思路。
@@ -13,6 +14,21 @@ export async function runReview(repoArg: string, title?: string, requirementId?:
   const repoPath = resolveRepoPath(repoArg);
   const profile = await scanProject(repoPath);
   const report = await createReviewReport(repoPath, profile, title, 7, requirementId);
+  await recordCliActivity(repoPath, {
+    kind: "record_current_diff",
+    title: "生成代码讲解",
+    summary: report.review.reviewDigest.oneLineSummary || report.memory.summary,
+    toolName: "specweft review",
+    requirementId: report.requirement?.id,
+    requirementTitle: report.requirement?.title,
+    target: report.reportPath,
+    metadata: {
+      memoryId: report.memory.id,
+      changedFiles: report.memory.changedFiles,
+      codeStatus: report.memory.codeStatus,
+      sections: report.review.reviewDigest.sections.map((item) => item.title),
+    },
+  });
 
   printText(formatReviewOutput(report));
 }

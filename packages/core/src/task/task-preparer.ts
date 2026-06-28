@@ -4,12 +4,14 @@ import type {
   MemoryIndexItem,
   PreparedTask,
   PreparedTaskRequirementMatch,
+  ProjectSettings,
   ProjectProfile,
   RequirementRecord,
   TaskAnalysis,
   TaskCodePointer,
   TaskExecutionStep,
   TaskGuardrail,
+  SkillContextIndex,
   TaskMemorySuggestion,
   TaskSkillSuggestion,
   ToolRecommendation,
@@ -21,6 +23,12 @@ import { listSkillPool } from "../pool/pool-manager.js";
 import { readProjectSkillSelection } from "../selection/selection-manager.js";
 import { scanProject } from "../scanner/project-scanner.js";
 import { toPosixPath } from "../utils/path.js";
+import { isIgnoredByProjectSettings, readProjectSettings } from "../settings/project-settings.js";
+import {
+  createSkillLoadPolicy,
+  createSkillSelectionRevision,
+  createTaskSkillContextIndex,
+} from "../skills/skill-context.js";
 
 const MAX_SCANNED_FILES = 600;
 const MAX_CODE_POINTERS = 8;
@@ -127,31 +135,41 @@ const CHINESE_DOMAIN_TERMS = [
 // 修改前的主入口：把用户的一句话需求转换成 Agent 可执行的上下文包。
 export async function prepareTask(repoPath: string, userInput: string): Promise<PreparedTask> {
   const profile = await scanProject(repoPath);
+  const settings = await readProjectSettings(repoPath);
   const taskAnalysis = analyzeTask(userInput);
   const [recommendations, memoryIndex, requirementFile, codePointers] = await Promise.all([
     recommendForProject(profile, repoPath),
-    createMemoryIndex(repoPath, profile, 8),
+    createMemoryIndex(repoPath, profile, Math.min(8, settings.contextMemory.maxRetainedTurns)),
     listRequirements(repoPath),
     locateRelatedFiles(repoPath, userInput, taskAnalysis),
   ]);
   const memorySuggestions = await createMemorySuggestions(repoPath, userInput, memoryIndex.items);
-  const restoredRequirement = selectRequirement(requirementFile.requirements, userInput);
+  const restoredRequirement = settings.changeRecording.autoLinkRequirement
+    ? selectRequirement(requirementFile.requirements, userInput)
+    : undefined;
   const handoffKeyword = createHandoffKeyword(userInput, restoredRequirement, memorySuggestions);
-  const handoff = restoredRequirement || memorySuggestions.length
+  const handoff = (restoredRequirement || (settings.changeRecording.autoLinkRequirement && memorySuggestions.length))
     ? await createMemoryHandoff(
       repoPath,
       profile,
       handoffKeyword,
-      MAX_MEMORY_SUGGESTIONS,
+      Math.min(MAX_MEMORY_SUGGESTIONS, settings.contextMemory.maxRetainedTurns),
       restoredRequirement,
     )
     : undefined;
   const skillSuggestions = await recommendSkillsForTask(profile, repoPath, userInput, recommendations);
+  const skillContext = await createTaskSkillContextIndex(
+    repoPath,
+    skillSuggestions.map((item) => item.id),
+  );
   const missingQuestions = createMissingQuestions(userInput, codePointers, memorySuggestions, taskAnalysis);
   const matchedRequirement = restoredRequirement
     ? createPreparedRequirementMatch(restoredRequirement, userInput, "Matched by requirement title, summary, or keywords.")
-    : createRequirementMatchFromMemory(memorySuggestions);
+    : settings.changeRecording.autoLinkRequirement
+      ? createRequirementMatchFromMemory(memorySuggestions)
+      : null;
   const executionPlan = createExecutionPlan({
+    settings,
     taskAnalysis,
     missingQuestions,
     codePointers,
@@ -159,7 +177,7 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
     memorySuggestions,
     matchedRequirement,
   });
-  const guardrail = createTaskGuardrail(userInput, matchedRequirement);
+  const guardrail = createTaskGuardrail(userInput, matchedRequirement, settings);
 
   return {
     projectId: profile.id,
@@ -175,6 +193,7 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
     codePointers,
     matchedRequirement,
     skillSuggestions,
+    skillContext,
     memorySuggestions,
     memoryIndex,
     executionPlan,
@@ -185,11 +204,13 @@ export async function prepareTask(repoPath: string, userInput: string): Promise<
       taskAnalysis,
       codePointers,
       skillSuggestions,
+      skillContext,
       memorySuggestions,
       matchedRequirement,
       handoffSummary: handoff?.summary,
       executionPlan,
       guardrail,
+      settings,
     }),
   };
 }
@@ -205,6 +226,7 @@ export async function recommendSkillsForTask(
     readProjectSkillSelection(repoPath),
   ]);
   const selectionStatus = new Map(skillSelection.selected.map((item) => [item.id, item.status]));
+  const selectionRevision = createSkillSelectionRevision(skillSelection);
   const projectSkillReasons = new Map(
     (projectRecommendations ?? await recommendForProject(profile, repoPath))
       .filter((item) => item.type === "skill")
@@ -222,6 +244,8 @@ export async function recommendSkillsForTask(
       const score = scoreText(skillText, tokens) + scoreSkillByTaskIntent(skillText, userInput);
       const projectReason = projectSkillReasons.get(skill.id);
       const matchedSignals = createSkillMatchedSignals(skillText, taskTokens, projectSignals, projectReason);
+      const status = selectionStatus.get(skill.id) ?? "recommended";
+      const loadPolicy = createSkillLoadPolicy(status);
       const reason = createSkillTaskReason(skill.name, userInput, projectReason, score, matchedSignals);
 
       return {
@@ -229,14 +253,23 @@ export async function recommendSkillsForTask(
         name: skill.name,
         reason,
         matchedSignals,
-        usageHint: createSkillUsageHint(skill.name, userInput, selectionStatus.get(skill.id)),
-        localRuleNote: createLocalRuleNote(skill.risk, selectionStatus.get(skill.id)),
+        usageHint: createSkillUsageHint(skill.name, userInput, status),
+        localRuleNote: createLocalRuleNote(skill.risk, status),
         conflictRisk: skill.risk,
-        status: selectionStatus.get(skill.id) ?? "recommended",
+        status,
+        loadPolicy,
+        selectionRevision,
+        staleIfRevisionChanges: true,
+        detailToolInput: loadPolicy === "read-on-demand"
+          ? {
+            skillId: skill.id,
+            selectionRevision,
+          }
+          : undefined,
         score,
       };
     })
-    .filter((item) => item.score > 0 || projectSkillReasons.has(item.id) || item.status === "enabled")
+    .filter((item) => item.status !== "ignored" && (item.score > 0 || projectSkillReasons.has(item.id) || item.status === "enabled"))
     .sort((left, right) => {
       if (left.status === "enabled" && right.status !== "enabled") {
         return -1;
@@ -356,6 +389,7 @@ async function locateRelatedFiles(
 }
 
 async function listCandidateFiles(repoPath: string): Promise<string[]> {
+  const settings = await readProjectSettings(repoPath);
   const result: string[] = [];
   const ignoredDirs = new Set([
     ".git",
@@ -404,12 +438,16 @@ async function listCandidateFiles(repoPath: string): Promise<string[]> {
       if (!entry.isFile() || !usefulExtensions.has(path.extname(entry.name))) {
         continue;
       }
+      const relativePath = toPosixPath(path.relative(repoPath, absolutePath));
+      if (isIgnoredByProjectSettings(relativePath, settings)) {
+        continue;
+      }
 
       const fileStat = await stat(absolutePath);
       if (fileStat.size > 500_000) {
         continue;
       }
-      result.push(toPosixPath(path.relative(repoPath, absolutePath)));
+      result.push(relativePath);
     }
   }
 
@@ -599,13 +637,13 @@ function createMissingQuestions(
   if (taskAnalysis.ambiguity === "high") {
     questions.push("这次希望改变的用户可见行为是什么？请给一个具体页面、接口、命令或错误现象。");
   } else if (normalized.length < 8) {
-    questions.push("What user-visible behavior should change?");
+    questions.push("这次希望改变的用户可见行为是什么？");
   }
   if (codePointers.length === 0 && memorySuggestions.length === 0) {
-    questions.push("Which module, page, API, or file should SpecWeft inspect first?");
+    questions.push("应该优先检查哪个模块、页面、接口或文件？");
   }
   if (/(优化|improve|better|重构|refactor)/i.test(normalized)) {
-    questions.push("Should the change prioritize readability, performance, bug fixing, or user experience?");
+    questions.push("这次优化优先关注可读性、性能、缺陷修复，还是用户体验？");
   }
   if (taskAnalysis.intent === "bugfix" && !/(复现|报错|错误|error|stack|log|现象)/i.test(normalized)) {
     questions.push("有没有报错信息、复现步骤或期望结果？这会决定优先检查哪条执行路径。");
@@ -619,25 +657,26 @@ function createMissingQuestions(
 
 function createAcceptanceCriteria(userInput: string, profile: ProjectProfile): string[] {
   const criteria = [
-    "Related files are inspected before editing.",
-    "The implementation stays scoped to the stated requirement.",
-    "SpecWeft records the final diff and memory after changes.",
+    "修改前已经阅读相关文件，而不是直接大范围改代码。",
+    "实现范围只服务当前需求，不夹带无关重构。",
+    "修改完成后通过 SpecWeft 记录本次 diff、讲解和需求记忆。",
   ];
 
   if (profile.testCommands.length > 0) {
-    criteria.push(`Run or recommend the smallest relevant test command: ${profile.testCommands[0]}.`);
+    criteria.push(`运行或建议最小相关验证命令：${profile.testCommands[0]}。`);
   } else {
-    criteria.push("Explain the smallest practical verification path if no test command is detected.");
+    criteria.push("如果没有检测到测试命令，需要说明最小可行验证方式。");
   }
 
   if (/修复|bug|error|错误|失败|fix|crash/i.test(userInput)) {
-    criteria.push("The suspected failure path is described and covered by a regression check.");
+    criteria.push("说明疑似失败路径，并给出回归检查方式。");
   }
 
   return criteria;
 }
 
 function createExecutionPlan(input: {
+  settings: ProjectSettings;
   taskAnalysis: TaskAnalysis;
   missingQuestions: string[];
   codePointers: TaskCodePointer[];
@@ -650,8 +689,8 @@ function createExecutionPlan(input: {
   if (input.missingQuestions.length > 0) {
     steps.push({
       title: "补齐需求边界",
-      action: `Ask: ${input.missingQuestions[0]}`,
-      reason: `${input.taskAnalysis.routingReason} 当前需求仍有关键边界不清楚，先问一个问题能避免大范围误改。`,
+      action: `先向用户确认：${input.missingQuestions[0]}`,
+      reason: `当前需求清晰度为 ${formatTaskLevel(input.taskAnalysis.ambiguity)}，先问一个问题能避免大范围误改。`,
       when: "if_missing_context",
     });
   }
@@ -670,8 +709,8 @@ function createExecutionPlan(input: {
   steps.push({
     title: "标记本次需求边界",
     action: input.matchedRequirement
-      ? `Call specweft.start_work_segment({ requirementId: "${input.matchedRequirement.requirementId}" }) with the current task before editing.`
-      : "Call specweft.start_work_segment with the current task before editing.",
+      ? `修改前调用 specweft.start_work_segment，requirementId=${input.matchedRequirement.requirementId}。`
+      : "修改前调用 specweft.start_work_segment，给本次任务建立边界。",
     reason: "给本次需求留下开始快照，后面 review 才能区分新改动和切需求前已经存在的 diff。",
     when: "always",
     tool: "specweft.start_work_segment",
@@ -681,16 +720,16 @@ function createExecutionPlan(input: {
     const strongest = input.codePointers[0];
     steps.push({
       title: "先读相关源码",
-      action: `Inspect ${input.codePointers.slice(0, 4).map((item) => item.path).join("; ")}`,
+      action: `优先阅读：${input.codePointers.slice(0, 4).map((item) => item.path).join("；")}`,
       reason: strongest
-        ? `最高命中文件来自 ${strongest.matchSource ?? "path"}：${strongest.reason}`
+        ? `最高命中文件来自${formatMatchSource(strongest.matchSource)}：${strongest.reason}`
         : "这些文件和需求关键词最接近，先读它们再决定修改范围。",
       when: "always",
     });
   } else {
     steps.push({
       title: "先定位模块",
-      action: `Search the repository by: ${input.taskAnalysis.suggestedSearches.slice(0, 8).join(", ") || "task keywords"}.`,
+      action: `按这些词搜索仓库：${input.taskAnalysis.suggestedSearches.slice(0, 8).join("、") || "需求关键词"}。`,
       reason: "当前没有强文件命中，直接改代码容易偏离真实入口。",
       when: "always",
     });
@@ -698,23 +737,37 @@ function createExecutionPlan(input: {
 
   if (input.skillSuggestions.length > 0) {
     const skill = input.skillSuggestions[0];
+    const skillAction = skill.loadPolicy === "read-on-demand" && skill.detailToolInput
+      ? `按需读取 Skill：specweft.read_skill_detail(${JSON.stringify(skill.detailToolInput)})。`
+      : `只参考 Skill 元数据：${skill.name} (${skill.id})，不要加载完整内容。`;
     steps.push({
       title: "考虑匹配 Skill",
-      action: `Consider Skill ${skill.name} (${skill.id}).`,
+      action: skillAction,
       reason: `${skill.reason} ${skill.localRuleNote}`,
       when: "if_relevant_skill",
+      tool: skill.loadPolicy === "read-on-demand" ? "specweft.read_skill_detail" : undefined,
     });
   }
 
-  steps.push({
-    title: "小步实现并记录结果",
-    action: input.matchedRequirement
-      ? `After editing, call specweft.record_current_diff({ requirementId: "${input.matchedRequirement.requirementId}" }).`
-      : "After editing, call specweft.record_current_diff.",
-    reason: "把本次修改讲解、记忆和工作段结束快照保存下来，后续新线程才能按需求恢复上下文。",
-    when: "after_edit",
-    tool: "specweft.record_current_diff",
-  });
+  if (input.settings.changeRecording.autoRecordDiff) {
+    steps.push({
+      title: "小步实现并记录结果",
+      action: input.matchedRequirement
+        ? `修改后调用 specweft.record_current_diff，requirementId=${input.matchedRequirement.requirementId}。`
+        : "修改后调用 specweft.record_current_diff，保存讲解和需求记忆。",
+      reason: "把本次修改讲解、记忆和工作段结束快照保存下来，后续新线程才能按需求恢复上下文。",
+      when: "after_edit",
+      tool: "specweft.record_current_diff",
+    });
+  } else {
+    steps.push({
+      title: "小步实现并保留讲解入口",
+      action: "修改后如只想临时讲解、不保存记忆，调用 specweft.review_current_diff。",
+      reason: "当前项目关闭了自动记录 Diff，默认不写入长期记忆。",
+      when: "after_edit",
+      tool: "specweft.review_current_diff",
+    });
+  }
 
   return steps.map((step, index) => ({
     order: index + 1,
@@ -725,6 +778,7 @@ function createExecutionPlan(input: {
 function createTaskGuardrail(
   userInput: string,
   matchedRequirement: PreparedTaskRequirementMatch | null,
+  settings: ProjectSettings,
 ): TaskGuardrail {
   const title = createTaskTitle(userInput, matchedRequirement);
   const requirementId = matchedRequirement?.requirementId;
@@ -744,7 +798,9 @@ function createTaskGuardrail(
     },
     finalResponseChecklist: [
       "说明本次需求上下文和为什么这样改。",
-      "引用 record_current_diff 返回的 agentReview.suggestedAgentResponse，而不是完整 advancedReview。",
+      settings.changeRecording.autoRecordDiff
+        ? "引用 record_current_diff 返回的 agentReview.suggestedAgentResponse，而不是完整 advancedReview。"
+        : "当前项目关闭自动记录 Diff；如只讲解不存记忆，引用 review_current_diff 返回的 agentReview。",
       "列出建议先看的源码入口和最小验证方式。",
       "如果没有调用 start_work_segment，先说明需求边界可能不准，并尽快补调用。",
     ],
@@ -773,18 +829,25 @@ function createAgentInstructions(input: {
   taskAnalysis: TaskAnalysis;
   codePointers: TaskCodePointer[];
   skillSuggestions: TaskSkillSuggestion[];
+  skillContext: SkillContextIndex;
   memorySuggestions: TaskMemorySuggestion[];
   matchedRequirement: PreparedTaskRequirementMatch | null;
   handoffSummary?: string;
   executionPlan: TaskExecutionStep[];
   guardrail: TaskGuardrail;
+  settings: ProjectSettings;
 }): string {
   const fileText = input.codePointers.length
     ? input.codePointers.map((item) => item.path).join(", ")
     : "No strong file match yet; ask one clarifying question before broad edits.";
   const skillText = input.skillSuggestions.length
-    ? input.skillSuggestions.map((item) => item.name).join(", ")
+    ? input.skillSuggestions
+      .map((item) => `${item.name} (${item.loadPolicy})`)
+      .join(", ")
     : "No task-specific Skill was selected.";
+  const allowedSkillText = input.skillContext.allowedSkillIds.length
+    ? input.skillContext.allowedSkillIds.join(", ")
+    : "none";
   const memoryText = input.memorySuggestions.length
     ? input.memorySuggestions.map((item) => item.title).join("; ")
     : "No matching memory should be restored by default.";
@@ -801,15 +864,23 @@ function createAgentInstructions(input: {
     `Task analysis: ${input.taskAnalysis.summary}. ${input.taskAnalysis.routingReason}`,
     `Inspect first: ${fileText}`,
     `Use or consider Skills: ${skillText}`,
+    `Skill context revision: ${input.skillContext.selectionRevision}`,
+    `Allowed Skill detail reads for this task: ${allowedSkillText}`,
+    `Skill context rule: ${input.skillContext.policy.staleInstruction}`,
     `Relevant memory: ${memoryText}`,
     `Matched requirement: ${requirementText}`,
     `Guardrail startWorkSegmentInput: ${JSON.stringify(input.guardrail.startWorkSegmentInput)}`,
     `Guardrail recordCurrentDiffInput: ${JSON.stringify(input.guardrail.recordCurrentDiffInput)}`,
+    `Project settings: autoRecordDiff=${input.settings.changeRecording.autoRecordDiff}; autoLinkRequirement=${input.settings.changeRecording.autoLinkRequirement}; maxRetainedTurns=${input.settings.contextMemory.maxRetainedTurns}; compressionStrategy=${input.settings.contextMemory.compressionStrategy}; ignorePaths=${input.settings.contextMemory.ignorePaths.join(", ") || "none"}`,
     `Execution plan:\n${planText}`,
     input.handoffSummary ? `Restored context summary: ${input.handoffSummary}` : undefined,
     "If missingQuestions is not empty, ask the user before editing unless the answer is obvious from the repository.",
+    "Never rely on Skill content loaded for a previous task unless it is still listed in the latest skillContext.allowedSkillIds and the selectionRevision matches.",
+    "Read full Skill content only through specweft.read_skill_detail with the selectionRevision returned by prepare_task.",
     "Before edits, call specweft.start_work_segment with guardrail.startWorkSegmentInput.",
-    "After edits, call specweft.record_current_diff with guardrail.recordCurrentDiffInput and use agentReview.suggestedAgentResponse in the final response.",
+    input.settings.changeRecording.autoRecordDiff
+      ? "After edits, call specweft.record_current_diff with guardrail.recordCurrentDiffInput and use agentReview.suggestedAgentResponse in the final response."
+      : "After edits, do not save memory automatically; call specweft.review_current_diff only if a temporary explanation is needed.",
   ].filter(Boolean).join("\n");
 }
 
@@ -862,15 +933,15 @@ function createSkillTaskReason(
   matchedSignals: string[],
 ): string {
   const taskReason = score > 0
-    ? `Matched the current task wording for "${userInput.trim()}".`
-    : "Selected because it is already useful for this project.";
+    ? `和当前需求「${userInput.trim()}」存在语义匹配。`
+    : "这个 Skill 已经适合当前项目，可作为候选参考。";
   const signalText = matchedSignals.length
-    ? ` Signals: ${matchedSignals.slice(0, 4).join(", ")}.`
+    ? ` 匹配信号：${matchedSignals.slice(0, 4).join("，")}。`
     : "";
 
   return projectReason
     ? `${taskReason}${signalText} ${projectReason}`
-    : `${taskReason}${signalText} Use ${name} only if it does not conflict with local project rules.`;
+    : `${taskReason}${signalText} 仅在不冲突本地项目规范时使用 ${name}。`;
 }
 
 function createSkillMatchedSignals(
@@ -908,15 +979,15 @@ function createSkillUsageHint(
   status?: TaskSkillSuggestion["status"],
 ): string {
   if (status === "enabled") {
-    return `This Skill is already enabled. Let the agent read ${name} before editing files related to "${userInput.trim()}".`;
+    return `This Skill is enabled. Read ${name} only through specweft.read_skill_detail when the latest task context allows it for "${userInput.trim()}".`;
   }
   if (status === "ignored") {
-    return `This Skill was ignored for the project. Re-enable it only if the current task clearly needs ${name}.`;
+    return `This Skill was ignored for the project. Do not load it unless the user restores it.`;
   }
   if (status === "disabled") {
-    return `This Skill is available but disabled. Enable it only for tasks where ${name} directly narrows the implementation path.`;
+    return `This Skill is disabled. Keep it metadata-only unless the user enables ${name} again.`;
   }
-  return `Consider ${name} before editing, then keep local AGENTS/CLAUDE rules higher priority than marketplace guidance.`;
+  return `Consider ${name} as metadata only, then keep local AGENTS/CLAUDE rules higher priority than marketplace guidance.`;
 }
 
 function createLocalRuleNote(
@@ -1072,8 +1143,61 @@ function createMatchSource(pathScore: number, contentScore: number): NonNullable
 }
 
 function createCodePointerReason(item: ScoredCandidateFile): string {
-  const signals = item.matchedSignals.length ? item.matchedSignals.join(", ") : "no explicit signal";
-  return `Matched by ${item.matchSource}; file role=${item.fileRole}. Signals: ${signals}.`;
+  const signals = formatMatchedSignals(item.matchedSignals);
+  return `通过${formatMatchSource(item.matchSource)}命中，文件角色：${formatFileRole(item.fileRole)}。${signals}`;
+}
+
+function formatTaskLevel(value: TaskAnalysis["ambiguity"] | TaskAnalysis["confidence"]): string {
+  if (value === "high") {
+    return "高";
+  }
+  if (value === "medium") {
+    return "中";
+  }
+  return "低";
+}
+
+function formatMatchSource(value?: TaskCodePointer["matchSource"]): string {
+  if (value === "path+content") {
+    return "路径和源码内容";
+  }
+  if (value === "content") {
+    return "源码内容";
+  }
+  return "文件路径";
+}
+
+function formatFileRole(value?: TaskCodePointer["fileRole"]): string {
+  const labels: Record<NonNullable<TaskCodePointer["fileRole"]>, string> = {
+    runtime: "运行时代码",
+    ui: "界面代码",
+    test: "测试",
+    docs: "文档",
+    config: "配置",
+    memory: "记忆模块",
+    requirement: "需求模块",
+    cli: "CLI 命令",
+    unknown: "未知",
+  };
+  return labels[value ?? "unknown"];
+}
+
+function formatMatchedSignals(signals: string[]): string {
+  if (signals.length === 0) {
+    return "没有明显关键词信号。";
+  }
+
+  const readable = signals.slice(0, 5).map((signal) => {
+    const [kind, value] = signal.split(":");
+    if (kind === "path") {
+      return `路径包含 ${value}`;
+    }
+    if (kind === "content") {
+      return `源码包含 ${value}`;
+    }
+    return signal;
+  });
+  return `命中信号：${readable.join("；")}。`;
 }
 
 function detectFileRole(filePath: string): NonNullable<TaskCodePointer["fileRole"]> {

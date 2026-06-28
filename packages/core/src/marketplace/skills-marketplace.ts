@@ -4,8 +4,14 @@ import type {
   MarketplaceSkillCandidate,
   MarketplaceSkillSearchResult,
   ProjectProfile,
+  SkillRegistryItem,
+  SkillUpdateCheck,
+  SkillUpdateItem,
   ToolRecommendation,
 } from "../schemas/types.js";
+import { listSkillPool } from "../pool/pool-manager.js";
+import { readProjectSkillSelection } from "../selection/selection-manager.js";
+import { readProjectSettings } from "../settings/project-settings.js";
 
 const SKILLSMP_API_URL = "https://skillsmp.com/api/skills";
 const DEFAULT_LIMIT = 12;
@@ -19,6 +25,7 @@ type SkillsMpResponse = {
 type SearchOptions = {
   limit?: number;
   timeoutMs?: number;
+  registryUrl?: string;
   search?: (keyword: string, options: SearchOptions) => Promise<MarketplaceSkill[]>;
   keywords?: string[];
 };
@@ -87,6 +94,58 @@ export async function recommendMarketplaceSkills(
   };
 }
 
+export async function checkMarketplaceSkillUpdates(
+  repoPath: string,
+  options: SearchOptions = {},
+): Promise<SkillUpdateCheck> {
+  const settings = await readProjectSettings(repoPath);
+  const registryUrl = options.registryUrl || settings.capabilities.skillRegistryUrl;
+  const timeoutMs = options.timeoutMs ?? settings.capabilities.mcpStdioTimeoutMs;
+  const [skillPool, skillSelection] = await Promise.all([
+    listSkillPool(),
+    readProjectSkillSelection(repoPath),
+  ]);
+  const enabledSkillIds = new Set(
+    skillSelection.selected
+      .filter((item) => item.status === "enabled")
+      .map((item) => item.id),
+  );
+  const enabledSkills = skillPool.items.filter((item) => enabledSkillIds.has(item.id));
+
+  if (!settings.capabilities.autoCheckSkillUpdates) {
+    const items = enabledSkills.map((skill) => createSkippedUpdateItem(skill, "Skill update checks are disabled in project settings."));
+    return createSkillUpdateCheck(false, registryUrl, items, []);
+  }
+
+  const warnings: string[] = [];
+  const items = await Promise.all(enabledSkills.map(async (skill) => {
+    if (skill.source !== "marketplace" || !skill.marketplace) {
+      return createSkippedUpdateItem(skill, "Only marketplace Skills with source metadata can be checked for updates.");
+    }
+
+    try {
+      const matches = await searchMarketplace(skill.name, {
+        ...options,
+        registryUrl,
+        timeoutMs,
+        limit: Math.max(options.limit ?? DEFAULT_LIMIT, 12),
+      });
+      const latest = findMatchingMarketplaceSkill(skill, matches);
+      if (!latest) {
+        return createUnknownUpdateItem(skill, "No matching Skill was found in the configured registry.");
+      }
+
+      return createUpdateItem(skill, latest);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`Skill update check failed for "${skill.name}": ${message}`);
+      return createUnknownUpdateItem(skill, message);
+    }
+  }));
+
+  return createSkillUpdateCheck(true, registryUrl, items, warnings);
+}
+
 export function createMarketplaceKeywords(
   profile: ProjectProfile,
   recommendations: ToolRecommendation[],
@@ -119,7 +178,7 @@ async function searchSkillsMp(
   keyword: string,
   options: SearchOptions,
 ): Promise<MarketplaceSkill[]> {
-  const url = new URL(SKILLSMP_API_URL);
+  const url = new URL(options.registryUrl || SKILLSMP_API_URL);
   url.searchParams.set("page", "1");
   url.searchParams.set("limit", String(options.limit ?? DEFAULT_LIMIT));
   url.searchParams.set("sortBy", "stars");
@@ -177,6 +236,110 @@ function createCandidate(
 
 function createCandidateKey(skill: MarketplaceSkill): string {
   return `${skill.author}:${skill.name}`.toLowerCase();
+}
+
+function findMatchingMarketplaceSkill(
+  installed: SkillRegistryItem,
+  candidates: MarketplaceSkill[],
+): MarketplaceSkill | undefined {
+  const metadata = installed.marketplace;
+  if (!metadata) {
+    return undefined;
+  }
+
+  return candidates.find((candidate) => candidate.id === installed.id)
+    ?? candidates.find((candidate) => candidate.githubUrl === metadata.githubUrl)
+    ?? candidates.find((candidate) => (
+      normalizeText(candidate.author) === normalizeText(metadata.author)
+      && normalizeText(candidate.name) === normalizeText(installed.name)
+    ));
+}
+
+function createUpdateItem(
+  installed: SkillRegistryItem,
+  latest: MarketplaceSkill,
+): SkillUpdateItem {
+  const currentUpdatedAt = installed.marketplace?.updatedAt;
+  const hasUpdate = compareUpdatedAt(latest.updatedAt, currentUpdatedAt) > 0;
+
+  return {
+    id: installed.id,
+    name: installed.name,
+    source: installed.source,
+    status: hasUpdate ? "update-available" : "current",
+    currentUpdatedAt,
+    latestUpdatedAt: latest.updatedAt,
+    latestGithubUrl: latest.githubUrl,
+    reason: hasUpdate
+      ? "A newer marketplace version appears to be available. Preview before reinstalling."
+      : "Installed Skill metadata matches the latest marketplace result.",
+  };
+}
+
+function createSkippedUpdateItem(skill: SkillRegistryItem, reason: string): SkillUpdateItem {
+  return {
+    id: skill.id,
+    name: skill.name,
+    source: skill.source,
+    status: "skipped",
+    currentUpdatedAt: skill.marketplace?.updatedAt,
+    reason,
+  };
+}
+
+function createUnknownUpdateItem(skill: SkillRegistryItem, reason: string): SkillUpdateItem {
+  return {
+    id: skill.id,
+    name: skill.name,
+    source: skill.source,
+    status: "unknown",
+    currentUpdatedAt: skill.marketplace?.updatedAt,
+    reason,
+  };
+}
+
+function createSkillUpdateCheck(
+  enabled: boolean,
+  registryUrl: string,
+  items: SkillUpdateItem[],
+  warnings: string[],
+): SkillUpdateCheck {
+  return {
+    enabled,
+    registryUrl,
+    generatedAt: new Date().toISOString(),
+    checkedCount: items.filter((item) => item.status !== "skipped").length,
+    updateCount: items.filter((item) => item.status === "update-available").length,
+    skippedCount: items.filter((item) => item.status === "skipped").length,
+    items,
+    warnings,
+  };
+}
+
+function compareUpdatedAt(left: string | undefined, right: string | undefined): number {
+  if (!left && !right) {
+    return 0;
+  }
+  if (!left) {
+    return -1;
+  }
+  if (!right) {
+    return 1;
+  }
+
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+
+  const leftDate = Date.parse(left);
+  const rightDate = Date.parse(right);
+  if (Number.isFinite(leftDate) && Number.isFinite(rightDate)) {
+    return leftDate - rightDate;
+  }
+
+  return left.localeCompare(right);
 }
 
 function isBetterCandidate(

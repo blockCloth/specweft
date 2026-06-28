@@ -1,7 +1,7 @@
 {
   "name": "@specweft/web",
   "version": "0.1.1",
-  "description": "Local Web UI for managing SpecWeft project context, MCPs, Skills, review, and memory.",
+  "description": "Local SpecWeft workbench for task preparation, Skill routing, review explanations, memory restore, and agent connection.",
   "license": "MIT",
   "type": "module",
   "main": "dist/server.js",
@@ -20,6 +20,9 @@
     "mcp",
     "codex",
     "claude",
+    "skills",
+    "review",
+    "memory",
     "web-ui"
   ],
   "engines": {

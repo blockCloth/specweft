@@ -17,6 +17,7 @@ import { projectConfigDir } from "../utils/path.js";
 import { createCapabilityCenter } from "../capabilities/capability-center.js";
 import { getActiveRequirement } from "../requirements/requirement-manager.js";
 import { writeAgentHarness } from "../harness/agent-harness.js";
+import { readProjectSettings } from "../settings/project-settings.js";
 
 const DEFAULT_MCP_IDS = ["filesystem", "git"];
 const DEFAULT_SKILL_IDS = ["diff-explainer", "test-planner"];
@@ -30,7 +31,8 @@ export async function createBootstrapSession(
 ): Promise<BootstrapSession> {
   const profile = await scanProject(repoPath);
   const requirement = await getActiveRequirement(repoPath);
-  const [recommendations, capabilityCenter, assembly, handoff, memoryDigest, requirementDossier] = await Promise.all([
+  const [settings, recommendations, capabilityCenter, assembly, handoff, memoryDigest, requirementDossier] = await Promise.all([
+    readProjectSettings(repoPath),
     recommendForProject(profile, repoPath),
     createCapabilityCenter(profile, repoPath),
     createRuntimeAssembly(repoPath),
@@ -44,6 +46,7 @@ export async function createBootstrapSession(
     projectName: profile.name,
     generatedAt: new Date().toISOString(),
     profile,
+    settings,
     recommendations,
     capabilityCenter,
     assembly,
@@ -90,6 +93,7 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
         "Call specweft.get_requirement_dossier when you need a human-readable map of repeated reviews by requirement.",
         "Call specweft.get_memory_index only when you need recent raw memory entries.",
         "Use the returned profile, runtime assembly, recommendations, digest, and dossier as local project context.",
+        "Treat assembly.skillContext as metadata-only. Do not read every SKILL.md at session start.",
       ],
     },
     {
@@ -98,6 +102,8 @@ function createAgentWorkflow(): BootstrapSession["workflow"] {
         "Call specweft.prepare_task with the user's request before editing code.",
         "If prepare_task returns missingQuestions, ask the user unless the answer is obvious from the repository.",
         "If prepare_task returns relevant memorySuggestions, call specweft.restore_requirement for the best match before editing.",
+        "Use prepare_task.skillContext as the latest Skill allowlist. Previously loaded Skill content is stale unless the latest selectionRevision and allowedSkillIds still include it.",
+        "Call specweft.read_skill_detail only for Skills listed in prepare_task.skillContext.allowedSkillIds.",
         "Call specweft.start_work_segment with prepare_task.guardrail.startWorkSegmentInput before editing.",
         "Keep prepare_task.guardrail.recordCurrentDiffInput for the final record_current_diff call.",
         "Use specweft.recommend_skills_for_task to pick task-specific Skills instead of enabling unrelated tools.",
@@ -183,10 +189,12 @@ function createAgentInstructionBlock(profile: ProjectProfile): string {
     "4. If `prepare_task` returns `missingQuestions`, ask the user unless the answer is obvious from the repository.",
     "5. If `prepare_task` returns relevant memories, call `specweft.restore_requirement` for the best match instead of loading every memory.",
     "6. Before editing, call `specweft.start_work_segment` with `prepare_task.guardrail.startWorkSegmentInput`, so mixed uncommitted diffs can be separated by request boundary.",
-    "7. Use `specweft.recommend_skills_for_task` for task-specific Skill routing. Treat MCP recommendations as optional, not required.",
-    "8. Call `specweft.get_recording_status` before and after edits; never finish with an unrecorded or changed-after-record diff.",
-    "9. After changing code, call `specweft.record_current_diff` with `prepare_task.guardrail.recordCurrentDiffInput`, then use `agentReview.suggestedAgentResponse` for the user-facing explanation.",
-    "10. Do not install marketplace MCPs or Skills automatically when they require credentials, network access, database access, or conflict with local rules.",
+    "7. Use `prepare_task.skillContext` as the only valid Skill context for the current request. Do not rely on Skill content loaded for earlier requests unless the latest `selectionRevision` and `allowedSkillIds` still allow it.",
+    "8. Read full Skill content only with `specweft.read_skill_detail` and the latest `selectionRevision`; otherwise keep Skills metadata-only.",
+    "9. Use `specweft.recommend_skills_for_task` for task-specific Skill routing. Treat MCP recommendations as optional, not required.",
+    "10. Call `specweft.get_recording_status` before and after edits; never finish with an unrecorded or changed-after-record diff.",
+    "11. After changing code, call `specweft.record_current_diff` with `prepare_task.guardrail.recordCurrentDiffInput`, then use `agentReview.suggestedAgentResponse` for the user-facing explanation.",
+    "12. Do not install marketplace MCPs or Skills automatically when they require credentials, network access, database access, or conflict with local rules.",
     "",
     INSTRUCTION_END_MARKER,
   ].join("\n");

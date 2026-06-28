@@ -3,16 +3,19 @@ import {
   analyzeCurrentDiff,
   applyProjectMcp,
   applyProjectSkill,
+  checkMarketplaceSkillUpdates,
   createAgentReviewPacket,
   createBootstrapSession,
   createCapabilityCenter,
   createMemoryDigest,
   createMemoryTimeline,
+  createProjectReadiness,
   createRequirementDossier,
   createReviewDraft,
   createReviewReport,
   createMemoryHandoff,
   createRuntimeAssembly,
+  createSkillContextIndex,
   getActiveRequirement,
   getRecordingStatus,
   installMarketplaceMcp,
@@ -22,28 +25,63 @@ import {
   getActiveWorkSegment,
   listRequirements,
   prepareTask,
+  readAgentActivity,
+  readProjectSettings,
   recommendForProject,
   recommendSkillsForTask,
   recommendMarketplaceMcps,
   recommendMarketplaceSkills,
   recallSessions,
+  recordAgentActivity,
   resolveRepoPath,
+  readSkillDetailForContext,
   saveSessionMemory,
   scanProject,
   startWorkSegment,
   completeWorkSegment,
   restoreRequirementMemory,
+  updateProjectSettings,
 } from "@specweft/core";
-import type { DiffSummary, RequirementRecord } from "@specweft/core";
+import type { DiffSummary, ProjectSettingsPatch, RequirementRecord } from "@specweft/core";
 import { z } from "zod";
 
 const RepoInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
 };
 
+const AgentActivityInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  limit: z.number().int().min(1).max(100).optional().describe("Maximum recent activity events to return."),
+};
+
+const ProjectSettingsInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  changeRecording: z.object({
+    autoRecordDiff: z.boolean().optional(),
+    autoLinkRequirement: z.boolean().optional(),
+    retentionDays: z.number().int().min(1).max(365).optional(),
+  }).optional(),
+  contextMemory: z.object({
+    maxRetainedTurns: z.number().int().min(1).max(200).optional(),
+    compressionStrategy: z.enum(["summary", "sliding-window", "none"]).optional(),
+    ignorePaths: z.array(z.string()).optional(),
+  }).optional(),
+  capabilities: z.object({
+    skillRegistryUrl: z.string().url().optional(),
+    autoCheckSkillUpdates: z.boolean().optional(),
+    mcpStdioTimeoutMs: z.number().int().min(1000).max(120000).optional(),
+  }).optional(),
+};
+
 const PrepareTaskInput = {
   repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
   task: z.string().describe("The user's natural language coding request."),
+};
+
+const SkillDetailInput = {
+  repoPath: z.string().optional().describe("Repository path. Defaults to the repo passed to specweft mcp."),
+  skillId: z.string().describe("Skill id returned by specweft.prepare_task or specweft.get_skill_context_index."),
+  selectionRevision: z.string().optional().describe("Selection revision returned by the latest prepare_task skillContext."),
 };
 
 const RestoreRequirementInput = {
@@ -187,7 +225,22 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
     },
     async ({ repoPath, task }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
-      return jsonToolResult(await prepareTask(resolvedRepoPath, task));
+      const prepared = await prepareTask(resolvedRepoPath, task);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "prepare_task",
+        title: "准备任务上下文",
+        summary: prepared.requirement.clarifiedGoal,
+        toolName: "specweft.prepare_task",
+        requirementId: prepared.matchedRequirement?.requirementId,
+        requirementTitle: prepared.matchedRequirement?.title,
+        metadata: {
+          codePointers: prepared.codePointers.length,
+          skillSuggestions: prepared.skillSuggestions.length,
+          memorySuggestions: prepared.memorySuggestions.length,
+          confidence: prepared.taskAnalysis.confidence,
+        },
+      });
+      return jsonToolResult(prepared);
     },
   );
 
@@ -232,11 +285,25 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const requirement = requirementId?.trim()
         ? await resolveToolRequirement(resolvedRepoPath, requirementId)
         : undefined;
-      return jsonToolResult(await restoreRequirementMemory(resolvedRepoPath, profile, {
+      const restored = await restoreRequirementMemory(resolvedRepoPath, profile, {
         keyword,
         requirement,
         limit,
-      }));
+      });
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "restore_requirement",
+        title: "恢复需求记忆",
+        summary: restored.summary,
+        toolName: "specweft.restore_requirement",
+        requirementId: restored.requirement?.id,
+        requirementTitle: restored.requirement?.title,
+        target: keyword,
+        metadata: {
+          sessions: restored.sessions.length,
+          compression: Boolean(restored.compression),
+        },
+      });
+      return jsonToolResult(restored);
     },
   );
 
@@ -251,7 +318,48 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
       const skillSuggestions = await recommendSkillsForTask(profile, resolvedRepoPath, task);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "recommend_skills",
+        title: "按需求推荐 Skill",
+        summary: "SpecWeft 已根据当前任务语义和本地 Skill 池生成候选。",
+        toolName: "specweft.recommend_skills_for_task",
+        metadata: {
+          suggestions: skillSuggestions.length,
+        },
+      });
       return jsonToolResult({ profile, skillSuggestions });
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_skill_context_index",
+    {
+      title: "Get Skill context index",
+      description: "Return the current lightweight Skill context index. It contains metadata, selection revision, and lazy-load rules, but never full SKILL.md content.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await createSkillContextIndex(resolvedRepoPath, {
+        scope: "enabled",
+      }));
+    },
+  );
+
+  server.registerTool(
+    "specweft.read_skill_detail",
+    {
+      title: "Read Skill detail lazily",
+      description: "Read a full SKILL.md only when the latest prepare_task skillContext allows it. If the selection revision changed, the old Skill context is stale and no content is returned.",
+      inputSchema: SkillDetailInput,
+    },
+    async ({ repoPath, skillId, selectionRevision }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await readSkillDetailForContext(
+        resolvedRepoPath,
+        skillId,
+        selectionRevision,
+      ));
     },
   );
 
@@ -265,6 +373,17 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
     async ({ repoPath, keyword, limit }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const bootstrap = await createBootstrapSession(resolvedRepoPath, keyword, limit);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "bootstrap_session",
+        title: "读取 Agent 启动上下文",
+        summary: "已向 Agent 返回项目画像、能力装配、记忆摘要和调用顺序。",
+        toolName: "specweft.bootstrap_session",
+        target: keyword,
+        metadata: {
+          capabilityCount: bootstrap.capabilityCenter.summary.total,
+          memoryCount: bootstrap.memoryDigest.totalMemories,
+        },
+      });
       return jsonToolResult({ bootstrap });
     },
   );
@@ -283,6 +402,71 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
   );
 
   server.registerTool(
+    "specweft.get_project_readiness",
+    {
+      title: "Get project readiness",
+      description: "Return a compact readiness checklist for Agent connection, Skill path, change review, and memory entry. Use this before deciding the next SpecWeft action in a project.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await createProjectReadiness(resolvedRepoPath));
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_project_settings",
+    {
+      title: "Get project settings",
+      description: "Return the project-level SpecWeft settings that control recording, memory compression, ignored paths, Skill registry, and MCP timeouts.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await readProjectSettings(resolvedRepoPath));
+    },
+  );
+
+  server.registerTool(
+    "specweft.update_project_settings",
+    {
+      title: "Update project settings",
+      description: "Update SpecWeft project settings. Use sparingly; local repository rules remain higher priority than marketplace Skills.",
+      inputSchema: ProjectSettingsInput,
+    },
+    async ({ repoPath, changeRecording, contextMemory, capabilities }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const patch: ProjectSettingsPatch = {
+        changeRecording,
+        contextMemory,
+        capabilities,
+      };
+      const settings = await updateProjectSettings(resolvedRepoPath, patch);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "settings_updated",
+        title: "更新项目配置",
+        summary: "Agent 已更新 SpecWeft 项目级策略。",
+        toolName: "specweft.update_project_settings",
+        target: ".specweft/settings.json",
+      });
+      return jsonToolResult(settings);
+    },
+  );
+
+  server.registerTool(
+    "specweft.get_agent_activity",
+    {
+      title: "Get agent activity",
+      description: "Return recent SpecWeft activity events so an agent can explain what context, memory, Skills, and reviews were touched in this project.",
+      inputSchema: AgentActivityInput,
+    },
+    async ({ repoPath, limit }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await readAgentActivity(resolvedRepoPath, limit));
+    },
+  );
+
+  server.registerTool(
     "specweft.recommend_project_tools",
     {
       title: "Recommend project tools",
@@ -293,6 +477,15 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
       const recommendations = await recommendForProject(profile, resolvedRepoPath);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "recommend_tools",
+        title: "刷新项目能力推荐",
+        summary: "SpecWeft 已根据项目画像刷新 MCP、Skill 和 CLI 能力候选。",
+        toolName: "specweft.recommend_project_tools",
+        metadata: {
+          recommendations: recommendations.length,
+        },
+      });
       return jsonToolResult({ profile, recommendations });
     },
   );
@@ -353,12 +546,27 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const requirement = requirementId?.trim()
         ? await resolveToolRequirement(resolvedRepoPath, requirementId)
         : await getActiveRequirement(resolvedRepoPath);
-      return jsonToolResult(await startWorkSegment(resolvedRepoPath, {
+      const segmentResult = await startWorkSegment(resolvedRepoPath, {
         projectId: profile.id,
         task,
         title,
         requirement,
-      }));
+      });
+      const { segment } = segmentResult;
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "start_work_segment",
+        title: "开启工作段",
+        summary: segment.task,
+        toolName: "specweft.start_work_segment",
+        requirementId: segment.requirementId,
+        requirementTitle: segment.requirementTitle,
+        target: segment.id,
+        metadata: {
+          baselineFiles: segment.baselineChangedFiles.length,
+          currentFiles: segment.currentChangedFiles.length,
+        },
+      });
+      return jsonToolResult(segmentResult);
     },
   );
 
@@ -385,13 +593,29 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
     },
     async ({ repoPath, segmentId, status, title, summary }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      const segment = await completeWorkSegment(resolvedRepoPath, {
+        segmentId,
+        status,
+        title,
+        summary,
+      });
+      if (!segment) {
+        return jsonToolResult({
+          error: "No active work segment was found.",
+        });
+      }
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "complete_work_segment",
+        title: "完成工作段",
+        summary: segment.summary || segment.task,
+        toolName: "specweft.complete_work_segment",
+        status: segment.status === "recorded" ? "success" : "attention",
+        requirementId: segment.requirementId,
+        requirementTitle: segment.requirementTitle,
+        target: segment.id,
+      });
       return jsonToolResult({
-        segment: await completeWorkSegment(resolvedRepoPath, {
-          segmentId,
-          status,
-          title,
-          summary,
-        }),
+        segment,
       });
     },
   );
@@ -476,7 +700,7 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
     async ({ repoPath, title, requirementId }) => {
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
-      const report = await createReviewReport(resolvedRepoPath, profile, title, 7, requirementId);
+      const report = await createReviewReport(resolvedRepoPath, profile, title, undefined, requirementId);
       const diff = await analyzeCurrentDiff(resolvedRepoPath);
       const agentReview = createAgentReviewPacket({
         title: report.title,
@@ -484,6 +708,20 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
         diff,
         requirement: report.requirement,
         reportPath: report.reportPath,
+      });
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "record_current_diff",
+        title: "记录当前 diff",
+        summary: report.memory.summary,
+        toolName: "specweft.record_current_diff",
+        requirementId: report.requirement?.id,
+        requirementTitle: report.requirement?.title,
+        target: report.reportPath,
+        metadata: {
+          changedFiles: diff.changedFiles.length,
+          additions: diff.stats.additions,
+          deletions: diff.stats.deletions,
+        },
       });
       return jsonToolResult({
         title: report.title,
@@ -592,6 +830,17 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       // MCP 安装只写 SpecWeft manifest 池，不直接改用户全局 agent 配置。
       const installed = await installMarketplaceMcp(mcp);
       const selection = await applyProjectMcp(resolvedRepoPath, installed.item.id);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "install_mcp",
+        title: "加入并启用市场 MCP",
+        summary: `已将 ${installed.item.name} 写入全局 MCP manifest 池，并启用到当前项目。`,
+        toolName: "specweft.install_marketplace_mcp",
+        target: installed.item.id,
+        metadata: {
+          runtime: installed.manifest.runtime,
+          risk: installed.manifest.risk,
+        },
+      });
 
       return jsonToolResult({ installed, selection });
     },
@@ -608,11 +857,27 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const profile = await scanProject(resolvedRepoPath);
       const recommendations = await recommendForProject(profile, resolvedRepoPath);
+      const settings = await readProjectSettings(resolvedRepoPath);
       const marketplaceSkills = await recommendMarketplaceSkills(profile, recommendations, {
         keywords: keyword?.trim() ? [keyword] : undefined,
+        registryUrl: settings.capabilities.skillRegistryUrl,
+        timeoutMs: settings.capabilities.mcpStdioTimeoutMs,
       });
 
       return jsonToolResult({ profile, marketplaceSkills });
+    },
+  );
+
+  server.registerTool(
+    "specweft.check_marketplace_skill_updates",
+    {
+      title: "Check marketplace Skill updates",
+      description: "Check enabled marketplace Skills against the configured Skill registry without reinstalling or changing local files.",
+      inputSchema: RepoInput,
+    },
+    async ({ repoPath }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
+      return jsonToolResult(await checkMarketplaceSkillUpdates(resolvedRepoPath));
     },
   );
 
@@ -628,6 +893,13 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       // 安装到全局池后再写项目选择，避免同一个 Skill 在多个项目里重复下载。
       const installed = await installMarketplaceSkill(skill);
       const selection = await applyProjectSkill(resolvedRepoPath, installed.item.id);
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "install_skill",
+        title: "加入并启用市场 Skill",
+        summary: `已将 ${installed.item.name} 加入全局 Skill 池，并启用到当前项目。`,
+        toolName: "specweft.install_marketplace_skill",
+        target: installed.item.id,
+      });
 
       return jsonToolResult({ installed, selection });
     },
@@ -641,10 +913,18 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       inputSchema: ApplyInput,
     },
     async ({ repoPath, id }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const selection = await applyProjectMcp(
-        resolveToolRepoPath(defaultRepoPath, repoPath),
+        resolvedRepoPath,
         id,
       );
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "apply_mcp",
+        title: "启用项目 MCP",
+        summary: "已将全局 MCP 池中的能力启用到当前项目。",
+        toolName: "specweft.apply_project_mcp",
+        target: id,
+      });
       return jsonToolResult({ selection });
     },
   );
@@ -657,10 +937,18 @@ export function registerSpecWeftTools(server: McpServer, defaultRepoPath: string
       inputSchema: ApplyInput,
     },
     async ({ repoPath, id }) => {
+      const resolvedRepoPath = resolveToolRepoPath(defaultRepoPath, repoPath);
       const selection = await applyProjectSkill(
-        resolveToolRepoPath(defaultRepoPath, repoPath),
+        resolvedRepoPath,
         id,
       );
+      await recordMcpActivity(resolvedRepoPath, {
+        kind: "apply_skill",
+        title: "启用项目 Skill",
+        summary: "已将全局 Skill 池中的能力启用到当前项目。",
+        toolName: "specweft.apply_project_skill",
+        target: id,
+      });
       return jsonToolResult({ selection });
     },
   );
@@ -707,4 +995,18 @@ function createCompactDiffSummary(diff: DiffSummary): Omit<DiffSummary, "diffTex
     ...compactDiff,
     diffTextOmitted: true,
   };
+}
+
+async function recordMcpActivity(
+  repoPath: string,
+  input: Omit<Parameters<typeof recordAgentActivity>[1], "source">,
+): Promise<void> {
+  try {
+    await recordAgentActivity(repoPath, {
+      source: "mcp",
+      ...input,
+    });
+  } catch {
+    // Activity logging is observational and must never break MCP tool calls.
+  }
 }

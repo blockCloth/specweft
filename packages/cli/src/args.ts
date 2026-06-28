@@ -96,7 +96,33 @@ export function parseArgs(argv: string[]): CliArgs {
     args.port = parsePort(maybeSubcommand);
   }
 
+  if (command === "prepare" && !args.task) {
+    const positionalTask = collectPositionalTask(commandTail);
+    if (positionalTask) {
+      args.task = positionalTask;
+    }
+  }
+
   return args;
+}
+
+function collectPositionalTask(values: string[]): string | undefined {
+  const optionNamesWithValue = new Set(["--repo", "--keyword", "--requirement", "--title", "--task", "--port"]);
+  const parts: string[] = [];
+
+  for (let index = 0; index < values.length; index += 1) {
+    const current = values[index];
+    if (optionNamesWithValue.has(current)) {
+      index += 1;
+      continue;
+    }
+    if (current.startsWith("-")) {
+      continue;
+    }
+    parts.push(current);
+  }
+
+  return parts.join(" ").trim() || undefined;
 }
 
 function findCommandIndex(argv: string[]): number {

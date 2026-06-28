@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeGlobalPools } from "../pool/pool-manager.js";
-import { applyProjectSkill } from "../selection/selection-manager.js";
+import { applyProjectSkill, ignoreProjectSkill } from "../selection/selection-manager.js";
 import { saveSessionMemory } from "../memory/session-memory.js";
 import { prepareTask, recommendSkillsForTask } from "../task/task-preparer.js";
 import { scanProject } from "../scanner/project-scanner.js";
@@ -47,6 +47,7 @@ test("prepares task context with file pointers, Skill suggestions, and memory ma
     const prepared = await prepareTask(repoPath, "帮我继续优化登录校验");
 
     assert.equal(prepared.projectName, "demo-app");
+    assert.match(prepared.requirement.clarifiedGoal, /demo-app/);
     assert.match(prepared.requirement.clarifiedGoal, /登录校验/);
     assert.equal(prepared.taskAnalysis.intent, "refactor");
     assert.equal(prepared.taskAnalysis.ambiguity, "low");
@@ -54,6 +55,16 @@ test("prepares task context with file pointers, Skill suggestions, and memory ma
     assert.match(prepared.matchedRequirement?.recordDiffTool ?? "", new RegExp(requirement.id));
     assert.ok(prepared.codePointers.some((item) => item.path === "login-service.ts"));
     assert.ok(prepared.skillSuggestions.some((item) => item.id === "diff-explainer"));
+    assert.ok(prepared.skillContext.allowedSkillIds.includes("diff-explainer"));
+    assert.equal(
+      prepared.skillSuggestions.find((item) => item.id === "diff-explainer")?.loadPolicy,
+      "read-on-demand",
+    );
+    assert.equal(
+      prepared.skillSuggestions.find((item) => item.id === "diff-explainer")?.selectionRevision,
+      prepared.skillContext.selectionRevision,
+    );
+    assert.doesNotMatch(JSON.stringify(prepared), /# Diff 讲解器/);
     assert.ok(prepared.memorySuggestions.some((item) => item.title === "Login validation review"));
     assert.ok(prepared.executionPlan.some((item) => item.tool === "specweft.start_work_segment"));
     assert.ok(prepared.executionPlan.some((item) => item.action.includes(requirement.id)));
@@ -67,10 +78,42 @@ test("prepares task context with file pointers, Skill suggestions, and memory ma
     assert.match(prepared.guardrail.recordCurrentDiffInput.title, /登录校验优化/);
     assert.ok(prepared.guardrail.finalResponseChecklist.some((item) => item.includes("agentReview")));
     assert.match(prepared.agentInstructions, /specweft\.record_current_diff/);
+    assert.match(prepared.agentInstructions, /specweft\.read_skill_detail/);
+    assert.match(prepared.agentInstructions, /Skill context revision/);
     assert.match(prepared.agentInstructions, /Guardrail startWorkSegmentInput/);
     assert.match(prepared.agentInstructions, /Guardrail recordCurrentDiffInput/);
     assert.match(prepared.agentInstructions, new RegExp(requirement.id));
     assert.match(prepared.agentInstructions, /Execution plan/);
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("keeps project and language text intact in clarified goals", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "specweft-task-goal-home-"));
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-task-goal-repo-"));
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await writeFile(path.join(repoPath, "package.json"), JSON.stringify({
+      name: "specweft-monorepo",
+      dependencies: {
+        typescript: "latest",
+      },
+    }), "utf-8");
+    await writeFile(path.join(repoPath, "ui.ts"), "export function renderUi() { return 'ui'; }\n", "utf-8");
+    await initializeGlobalPools();
+
+    const prepared = await prepareTask(repoPath, "帮我优化一下这个界面，不要太复杂");
+
+    assert.match(prepared.requirement.clarifiedGoal, /specweft-monorepo/);
+    assert.match(prepared.requirement.clarifiedGoal, /typescript/);
+    assert.match(prepared.requirement.clarifiedGoal, /this task/);
+    assert.doesNotMatch(prepared.requirement.clarifiedGoal, /In pecweft-monorepo/);
+    assert.doesNotMatch(prepared.requirement.clarifiedGoal, /type cript/);
+    assert.doesNotMatch(prepared.requirement.clarifiedGoal, /thi ta k/);
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });
@@ -237,6 +280,28 @@ test("recommends task Skills without requiring MCP installation", async () => {
     assert.ok(suggestions.length > 0);
     assert.equal(suggestions[0]?.id, "diff-explainer");
     assert.equal(suggestions[0]?.status, "recommended");
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+    await rm(repoPath, { recursive: true, force: true });
+  }
+});
+
+test("does not recommend ignored Skills for task context", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "specweft-skill-router-ignore-home-"));
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "specweft-skill-router-ignore-repo-"));
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await writeFile(path.join(repoPath, "package.json"), JSON.stringify({
+      name: "ignored-review-demo",
+    }), "utf-8");
+    await initializeGlobalPools();
+    await ignoreProjectSkill(repoPath, "diff-explainer");
+    const profile = await scanProject(repoPath);
+    const suggestions = await recommendSkillsForTask(profile, repoPath, "讲解这次 diff 并给我 review 清单");
+
+    assert.ok(!suggestions.some((item) => item.id === "diff-explainer"));
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });

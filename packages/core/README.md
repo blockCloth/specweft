@@ -4,7 +4,8 @@ Core library for SpecWeft.
 
 It contains the project scanner, MCP/Skill pool, capability recommendation,
 runtime assembly, task preparation, code review explanation, work segments,
-and requirement-scoped memory.
+Agent Harness generation, connection diagnostics, project settings, activity
+tracking, memory protection, and requirement-scoped memory.
 
 Most users should install the CLI instead:
 
@@ -38,10 +39,14 @@ console.log(report.review.reviewOverview.title);
 
 ## Notes
 
-- The public API is still young. Prefer the CLI for normal use.
+- Prefer the CLI for normal use; the CLI and Web UI call this package instead
+  of duplicating workflow logic.
 - SpecWeft stores project-local state under `.specweft/`.
 - Global MCP and Skill pool files live under the configured SpecWeft home.
 - Review works without an LLM key; optional LLM review is layered on top of the
   rule-based output.
+- Memory protection is optional. When `SPECWEFT_MEMORY_KEY` is configured,
+  secure JSON storage is used for requirement memory, work segments, and agent
+  activity state.
 
 See the repository README for full documentation.

@@ -4,24 +4,18 @@ import {
     readMcpManifest,
 } from "../pool/pool-manager.js";
 import type {
-    ProjectSelectionFile,
-    ProjectSelectionItem,
     RuntimeAssembly,
 } from "../schemas/types.js";
-import {
-    mcpProjectSelectionPath,
-    skillProjectSelectionPath,
-} from "../selection/selection-path.js";
-import { readJsonFile } from "../utils/json.js";
+import { readProjectMcpSelection, readProjectSkillSelection } from "../selection/selection-manager.js";
+import { readProjectSettings } from "../settings/project-settings.js";
+import { createSkillContextIndex } from "../skills/skill-context.js";
 
 export async function createRuntimeAssembly(repoPath: string): Promise<RuntimeAssembly> {
     // 读取当前项目已经启用的 MCP 和 Skills。
-    const selectedMcpServers = await readProjectSelectionFile(
-        mcpProjectSelectionPath(repoPath),
-    );
-    const selectedSkills = await readProjectSelectionFile(
-        skillProjectSelectionPath(repoPath),
-    );
+    const [selectedMcpServers, selectedSkills] = await Promise.all([
+        readProjectMcpSelection(repoPath),
+        readProjectSkillSelection(repoPath),
+    ]);
 
     const selectedMcpIds = new Set(
         selectedMcpServers.selected
@@ -36,7 +30,11 @@ export async function createRuntimeAssembly(repoPath: string): Promise<RuntimeAs
 
     // 从全局池读取所有可用 MCP / Skills，再按项目选择过滤。
     const allMcpServers = await listMcpPool();
-    const allSkills = await listSkillPool();
+    const [allSkills, settings, skillContext] = await Promise.all([
+        listSkillPool(),
+        readProjectSettings(repoPath),
+        createSkillContextIndex(repoPath, { scope: "enabled" }),
+    ]);
     const mcpServers: RuntimeAssembly["mcpServers"] = {};
 
     for (const item of allMcpServers.items) {
@@ -55,6 +53,7 @@ export async function createRuntimeAssembly(repoPath: string): Promise<RuntimeAs
                 command: replaceProjectRoot(manifest.launch.command, repoPath),
                 args: manifest.launch.args.map((arg) => replaceProjectRoot(arg, repoPath)),
                 env: createEnvMap(manifest.env),
+                timeoutMs: settings.capabilities.mcpStdioTimeoutMs,
             };
             continue;
         }
@@ -79,16 +78,8 @@ export async function createRuntimeAssembly(repoPath: string): Promise<RuntimeAs
     return {
         mcpServers,
         skills,
+        skillContext,
     };
-}
-
-async function readProjectSelectionFile(filePath: string): Promise<ProjectSelectionFile> {
-    return (
-        (await readJsonFile<ProjectSelectionFile>(filePath)) ?? {
-            version: 1,
-            selected: [] as ProjectSelectionItem[],
-        }
-    );
 }
 
 function replaceProjectRoot(value: string, repoPath: string): string {

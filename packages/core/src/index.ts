@@ -3,6 +3,7 @@ export type {
   DiffSummary,
   CodeSnapshotState,
   CodeSnapshotStatus,
+  CompressionStrategy,
   GitChangeSnapshot,
   MemoryTimeline,
   RequirementDossier,
@@ -14,6 +15,10 @@ export type {
   MemoryIndexItem,
   ProjectProfile,
   PoolInitResult,
+  ProjectSettings,
+  ProjectSettingsPatch,
+  MemoryCompressionFile,
+  MemoryCompressionRecord,
   AgentReviewPacket,
   ReviewDraft,
   ReviewOverview,
@@ -36,6 +41,13 @@ export type {
   ProjectSelectionStatus,
   RuntimeAssembly,
   SkillDetail,
+  SkillDetailAccess,
+  SkillDetailAccessStatus,
+  SkillContextIndex,
+  SkillContextIndexItem,
+  SkillContextLoadPolicy,
+  SkillContextPolicy,
+  SkillContextScope,
   SkillRegistryItem,
   ToolRecommendation,
   ProjectStatus,
@@ -64,6 +76,9 @@ export type {
   MarketplaceSkillInstallResult,
   MarketplaceSkillPreview,
   MarketplaceSkillSearchResult,
+  SkillUpdateCheck,
+  SkillUpdateItem,
+  SkillUpdateStatus,
   MarketplaceConflictLevel,
   MarketplaceMcp,
   MarketplaceMcpCandidate,
@@ -75,14 +90,43 @@ export type {
   AgentHarnessFile,
   AgentHarnessKind,
   AgentHarnessResult,
+  AgentConnectionClient,
+  AgentConnectionPackage,
+  AgentConnectionStep,
+  ProjectReadiness,
+  ProjectReadinessItem,
+  ProjectReadinessStatus,
   SpecWeftInitResult,
+  ConnectionDoctorCheck,
+  ConnectionDoctorReport,
   CapabilityCenter,
   CapabilityKind,
   CapabilityManifest,
   CapabilityStatus,
+  AgentActivityEvent,
+  AgentActivityKind,
+  AgentActivityLog,
+  AgentActivitySource,
+  AgentActivityStatus,
 } from "./schemas/types.js";
 
 export { resolveRepoPath } from "./utils/path.js";
+export {
+  agentActivityPath,
+  readAgentActivity,
+  recordAgentActivity,
+} from "./activity/agent-activity.js";
+export {
+  DEFAULT_PROJECT_SETTINGS,
+  ensureProjectSettings,
+  filterIgnoredPaths,
+  isIgnoredByProjectSettings,
+  normalizeProjectSettings,
+  projectSettingsPath,
+  readProjectSettings,
+  updateProjectSettings,
+  writeProjectSettings,
+} from "./settings/project-settings.js";
 export {
   createBootstrapSession,
   initializeSpecWeftProject,
@@ -91,6 +135,8 @@ export {
   createHarnessTemplates,
   writeAgentHarness,
 } from "./harness/agent-harness.js";
+export { createAgentConnectionPackage } from "./connect/agent-connection-package.js";
+export { createConnectionDoctorReport } from "./connect/connection-doctor.js";
 export { initializeProject, scanProject } from "./scanner/project-scanner.js";
 export { createCapabilityCenter } from "./capabilities/capability-center.js";
 export {
@@ -108,6 +154,7 @@ export {
 } from "./requirements/requirement-manager.js";
 export { recommendForProject } from "./recommendations/recommender.js";
 export {
+  checkMarketplaceSkillUpdates,
   createMarketplaceKeywords,
   recommendMarketplaceSkills,
 } from "./marketplace/skills-marketplace.js";
@@ -147,9 +194,17 @@ export {
   prepareTask,
   recommendSkillsForTask,
 } from "./task/task-preparer.js";
+export {
+  createSkillContextIndex,
+  createSkillLoadPolicy,
+  createSkillSelectionRevision,
+  createTaskSkillContextIndex,
+  readSkillDetailForContext,
+} from "./skills/skill-context.js";
 export { createMemoryTimeline } from "./memory/memory-timeline.js";
 export { getRecordingStatus } from "./recording/recording-status.js";
 export { currentProjectStatus } from "./status/project-status.js";
+export { createProjectReadiness } from "./status/project-readiness.js";
 export {
   getMemoryProtectionStatus,
   protectMemoryFiles,

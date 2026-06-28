@@ -12,19 +12,43 @@ import {
   type RequirementDossierSession,
 } from "@specweft/core";
 import { printJson, printText } from "../output.js";
+import { recordCliActivity } from "./activity.js";
 
 // 输出轻量记忆目录，供人和 Agent 判断“要恢复哪段历史”。
 export async function runMemory(repoArg: string): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
   const profile = await scanProject(repoPath);
-  printJson(await createMemoryIndex(repoPath, profile));
+  const index = await createMemoryIndex(repoPath, profile);
+  await recordCliActivity(repoPath, {
+    kind: "memory_recalled",
+    title: "查看记忆索引",
+    summary: index.summary,
+    toolName: "specweft memory",
+    metadata: {
+      items: index.items.length,
+      project: profile.name,
+    },
+  });
+  printJson(index);
 }
 
 // 输出按需求聚合后的长期摘要入口，比 memory index 更适合新线程先读。
 export async function runDigest(repoArg: string): Promise<void> {
   const repoPath = resolveRepoPath(repoArg);
   const profile = await scanProject(repoPath);
-  printJson(await createMemoryDigest(repoPath, profile));
+  const digest = await createMemoryDigest(repoPath, profile);
+  await recordCliActivity(repoPath, {
+    kind: "memory_recalled",
+    title: "查看记忆摘要",
+    summary: digest.summary,
+    toolName: "specweft digest",
+    metadata: {
+      totalThreads: digest.totalThreads,
+      totalMemories: digest.totalMemories,
+      compressionCount: digest.totalCompressionCount,
+    },
+  });
+  printJson(digest);
 }
 
 // 输出需求档案：比 digest 更适合人类 review，展示每条需求的多次修改记录。
@@ -36,6 +60,19 @@ export async function runDossier(repoArg: string, asJson = false, full = false):
     // JSON 通常会被 Codex/Claude 或脚本读取，默认只给需求入口和省略数量；
     // 人类文本输出保留少量预览，方便直接在终端 review。
     sessionPreviewLimit: full ? undefined : asJson ? 0 : 3,
+  });
+  await recordCliActivity(repoPath, {
+    kind: "memory_recalled",
+    title: "查看需求档案",
+    summary: dossier.summary,
+    toolName: "specweft dossier",
+    requirementId: dossier.activeRequirementId,
+    metadata: {
+      totalRequirements: dossier.totalRequirements,
+      totalSessions: dossier.totalSessions,
+      full,
+      asJson,
+    },
   });
 
   if (asJson) {
@@ -64,10 +101,24 @@ export async function runRestore(
     throw new Error(`没有找到需求：${requirementId}`);
   }
 
-  printJson(await restoreRequirementMemory(repoPath, profile, {
+  const restored = await restoreRequirementMemory(repoPath, profile, {
     keyword,
     requirement: requirementId ? requirement : requirement,
-  }));
+  });
+  await recordCliActivity(repoPath, {
+    kind: "restore_requirement",
+    title: "恢复需求记忆",
+    summary: restored.summary,
+    toolName: "specweft restore",
+    requirementId: restored.requirement?.id,
+    requirementTitle: restored.requirement?.title,
+    target: keyword || requirementId || restored.requirement?.title,
+    metadata: {
+      sessions: restored.sessions.length,
+      compression: Boolean(restored.compression),
+    },
+  });
+  printJson(restored);
 }
 
 function formatDossier(dossier: RequirementDossier): string {

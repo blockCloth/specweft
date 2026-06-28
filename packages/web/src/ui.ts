@@ -1,3424 +1,2140 @@
 export function renderApp(repoPath: string): string {
   return `<!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SpecWeft</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f7f9fc;
-        --panel: rgba(255, 255, 255, 0.82);
-        --panel-soft: rgba(245, 248, 252, 0.82);
-        --text: #172033;
-        --muted: #687385;
-        --line: rgba(98, 118, 148, 0.18);
-        --line-strong: rgba(59, 102, 172, 0.28);
-        --accent: #2563eb;
-        --accent-strong: #1d4ed8;
-        --accent-soft: rgba(229, 238, 255, 0.78);
-        --cyan: #0891b2;
-        --green: #0f8a5f;
-        --amber: #a56712;
-        --red: #c63d3d;
-        --blue: #2563eb;
-        --shadow: 0 22px 54px rgba(41, 62, 96, 0.08);
-        --shadow-soft: 0 10px 26px rgba(41, 62, 96, 0.06);
-        --glass: rgba(255, 255, 255, 0.76);
-        --radius: 8px;
-        --radius-sm: 7px;
-      }
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpecWeft — AI Coding Agent 本地伴侣层</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ef;
+      --surface: #fbf9f5;
+      --surface-white: #ffffff;
+      --border: #e7e1d7;
+      --fg: #1f2421;
+      --muted: #5c635d;
+      --muted-soft: #7f837d;
+      --accent: #c4612f;
+      --accent-hover: #a94e22;
+      --accent-tint: #f2e3d6;
+      --dark: #1f2421;
+      --success: #2d7a4f;
+      --warning: #d97757;
+      --danger: #b84a3a;
+      --shadow: 0 12px 32px rgba(31, 36, 33, 0.08);
+    }
 
-      * {
-        box-sizing: border-box;
-      }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-      body {
-        margin: 0;
-        min-width: 320px;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
+    body {
+      min-width: 320px;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+      font-weight: 300;
+      line-height: 1.6;
+      color: var(--fg);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
 
-      button,
-      input,
-      select {
-        font: inherit;
-      }
+    button, input, select, textarea { font: inherit; }
+    strong, b { font-weight: 500; }
 
-      select {
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
+    .app-shell {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      height: 100vh;
+      overflow: hidden;
+    }
 
-      .shell {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: 252px minmax(0, 1fr);
-      }
+    .sidebar {
+      background: var(--dark);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
 
+    .sidebar-header {
+      padding: 24px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .sidebar-header h1 {
+      font-family: "DM Serif Display", Georgia, serif;
+      font-size: 22px;
+      font-weight: 400;
+      letter-spacing: 0;
+      margin-bottom: 4px;
+    }
+
+    .tagline {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 400;
+      letter-spacing: 0.02em;
+    }
+
+    .project-picker {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .project-picker label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .project-select {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      padding: 8px 32px 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 400;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='white' stroke-opacity='0.6' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    .project-select option { color: var(--fg); background: #fff; }
+
+    .nav {
+      flex: 1;
+      padding: 12px 0;
+      overflow-y: auto;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      border-left: 3px solid transparent;
+      font-weight: 400;
+    }
+
+    .nav-item:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+    }
+
+    .nav-item.active {
+      background: rgba(196, 97, 47, 0.12);
+      color: #fff;
+      border-left-color: var(--accent);
+      font-weight: 500;
+    }
+
+    .nav-item .icon {
+      width: 18px;
+      height: 18px;
+      opacity: 0.8;
+      flex: 0 0 auto;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      background: var(--surface-white);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .topbar h2 {
+      font-family: "DM Serif Display", Georgia, serif;
+      font-size: 20px;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: var(--fg);
+      white-space: nowrap;
+    }
+
+    .topbar-actions {
+      display: none;
+      gap: 12px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .topbar-actions.active { display: flex; }
+
+    .btn {
+      min-height: 34px;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn svg { flex: 0 0 auto; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface-white);
+      transform: translateY(-1px);
+    }
+
+    .btn-plain {
+      background: transparent;
+      color: var(--accent);
+      border: 0;
+      padding-inline: 8px;
+    }
+
+    .btn[disabled] {
+      opacity: 0.58;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 32px;
+      display: none;
+    }
+
+    .content.active { display: block; }
+
+    .tabs {
+      display: flex;
+      gap: 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+
+    .tab {
+      padding: 12px 4px;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .tab:hover { color: var(--fg); }
+
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 500;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: var(--surface-white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 500;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: var(--surface-white);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      transition: box-shadow 0.15s, transform 0.15s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--fg);
+      margin-bottom: 4px;
+      overflow-wrap: anywhere;
+    }
+
+    .card-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .card-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 16px;
+      overflow-wrap: anywhere;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      max-width: 100%;
+    }
+
+    .badge-installed, .badge-active {
+      background: rgba(45, 122, 79, 0.12);
+      color: var(--success);
+    }
+
+    .badge-available {
+      background: var(--accent-tint);
+      color: var(--accent);
+    }
+
+    .badge-muted {
+      background: var(--surface);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .badge-warning {
+      background: rgba(217, 119, 87, 0.12);
+      color: var(--warning);
+    }
+
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      background: var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s;
+      flex: 0 0 auto;
+      border: 0;
+    }
+
+    .toggle.active { background: var(--accent); }
+
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle.active::after { transform: translateX(18px); }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .list-item {
+      background: var(--surface-white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: box-shadow 0.15s, transform 0.15s;
+    }
+
+    .list-item:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(31, 36, 33, 0.06);
+    }
+
+    .list-item-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--accent-tint);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      color: var(--accent);
+    }
+
+    .list-item-icon svg {
+      width: 20px;
+      height: 20px;
+      color: currentColor;
+    }
+
+    .list-item-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .list-item-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--fg);
+      margin-bottom: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .list-item-desc {
+      font-size: 13px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .list-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: none;
+      border: 1px solid var(--border);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      color: var(--muted);
+    }
+
+    .icon-btn:hover {
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .search-bar {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    .search-bar input {
+      width: 100%;
+      padding: 12px 16px 12px 42px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      background: var(--surface-white);
+      color: var(--fg);
+      font-family: inherit;
+      font-weight: 300;
+    }
+
+    .search-bar input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .search-bar::before {
+      content: "⌕";
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 56px 32px;
+      background: var(--surface-white);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+    }
+
+    .empty-state h3 {
+      font-family: "DM Serif Display", Georgia, serif;
+      font-size: 20px;
+      font-weight: 400;
+      margin-bottom: 8px;
+      color: var(--fg);
+    }
+
+    .empty-state p {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .form-grid {
+      max-width: 720px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--fg);
+      margin-bottom: 8px;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 300;
+      background: var(--surface);
+      color: var(--fg);
+      font-family: inherit;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 92px;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: var(--surface-white);
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .thread-wrap {
+      background: var(--surface-white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: box-shadow 0.15s;
+    }
+
+    .thread-wrap:hover { box-shadow: 0 2px 8px rgba(31, 36, 33, 0.06); }
+
+    .thread-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px;
+      cursor: pointer;
+    }
+
+    .thread-tl {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 16px 20px 20px;
+    }
+
+    .thread-tl.open { display: block; }
+
+    .tl-track {
+      border-left: 2px solid var(--border);
+      margin-left: 4px;
+      padding-left: 20px;
+    }
+
+    .tl-item {
+      position: relative;
+      padding: 10px 0;
+    }
+
+    .tl-item::before {
+      content: "";
+      position: absolute;
+      left: -27px;
+      top: 15px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--surface-white);
+      border: 2px solid var(--border);
+    }
+
+    .tl-item:first-child::before {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .tl-arrow {
+      transition: transform 0.2s;
+      flex-shrink: 0;
+      color: var(--muted);
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(31, 36, 33, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: var(--surface-white);
+      border-radius: 16px;
+      max-width: 640px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(31, 36, 33, 0.2);
+    }
+
+    .modal-wide { max-width: 900px; width: 95vw; }
+
+    .modal-header {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .modal-header h3 {
+      font-family: "DM Serif Display", Georgia, serif;
+      font-size: 20px;
+      font-weight: 400;
+      margin-bottom: 4px;
+    }
+
+    .modal-header p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .modal-body {
+      padding: 28px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      padding: 20px 28px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .readable {
+      color: var(--fg);
+      font-size: 14px;
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+    }
+
+    .readable h1,
+    .readable h2,
+    .readable h3 {
+      font-family: "DM Serif Display", Georgia, serif;
+      font-weight: 400;
+      line-height: 1.25;
+      margin: 18px 0 8px;
+    }
+
+    .readable p { margin: 8px 0; }
+    .readable ul, .readable ol { margin: 8px 0 8px 22px; }
+
+    .codebox {
+      margin: 0;
+      padding: 16px;
+      font-size: 12px;
+      line-height: 1.7;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow: auto;
+      white-space: pre-wrap;
+      tab-size: 2;
+      color: var(--fg);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-height: 420px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 1200;
+      display: grid;
+      gap: 8px;
+      width: min(360px, calc(100vw - 48px));
+    }
+
+    .toast-item {
+      background: var(--dark);
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+      font-size: 13px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .inline-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .soft-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 16px;
+      letter-spacing: 0.02em;
+    }
+
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 1fr; }
       .sidebar {
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        padding: 22px 16px;
-        border-right: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.72);
-        backdrop-filter: blur(22px) saturate(135%);
-        box-shadow: 18px 0 54px rgba(41, 62, 96, 0.05);
+        height: auto;
+        max-height: 46vh;
       }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 22px;
-      }
-
-      .mark {
-        width: 38px;
-        height: 38px;
-        display: grid;
-        place-items: center;
-        border: 1px solid rgba(78, 107, 158, 0.18);
-        border-radius: var(--radius);
-        background: rgba(245, 249, 255, 0.9);
-        color: var(--accent);
-        font-weight: 800;
-        box-shadow: 0 12px 28px rgba(41, 62, 96, 0.08);
-      }
-
-      .brand-title {
-        font-size: 18px;
-        font-weight: 760;
-      }
-
-      .brand-subtitle {
-        margin-top: 2px;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .field-label {
-        display: grid;
-        gap: 6px;
-        margin-bottom: 18px;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .nav {
-        display: grid;
-        gap: 6px;
-      }
-
-      .nav button {
-        width: 100%;
-        min-height: 42px;
-        display: flex;
-        align-items: center;
-        padding: 0 12px;
-        border: 1px solid transparent;
-        border-radius: var(--radius-sm);
-        background: transparent;
-        color: var(--muted);
-        text-align: left;
-        cursor: pointer;
-        font-weight: 680;
-        transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
-      }
-
-      .nav button.active,
-      .nav button:hover {
-        border-color: var(--line-strong);
-        background: var(--accent-soft);
-        color: var(--text);
-      }
-
-      .nav button.active {
-        box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.72);
-      }
-
-      .main {
-        min-width: 0;
-        padding: 24px;
-      }
-
+      .main { min-height: 54vh; }
       .topbar {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 12px;
-        margin-bottom: 22px;
-        padding: 14px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.68);
-        box-shadow: var(--shadow-soft);
-        backdrop-filter: blur(20px) saturate(135%);
+        align-items: flex-start;
+        flex-direction: column;
       }
-
-      .topbar-main {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 16px;
-        align-items: center;
+      .content { padding: 20px; }
+      .split { grid-template-columns: 1fr; }
+      .list-item {
+        align-items: flex-start;
+        flex-direction: column;
       }
-
-      .repo-row {
-        display: grid;
-        grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.45fr) auto auto auto;
-        gap: 10px;
-      }
-
-      .requirement-row {
-        display: grid;
-        grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr) auto;
-        gap: 10px;
-      }
-
-      .input,
-      .select {
+      .list-item-actions {
         width: 100%;
-        min-height: 42px;
-        padding: 8px 11px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius-sm);
-        background: rgba(255, 255, 255, 0.78);
-        color: var(--text);
-        outline: none;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.86) inset;
-        backdrop-filter: blur(16px);
-      }
-
-      .input:focus,
-      .select:focus {
-        border-color: rgba(82, 145, 255, 0.62);
-        box-shadow: 0 0 0 4px rgba(29, 117, 255, 0.11), var(--shadow-soft);
-      }
-
-      .btn {
-        min-height: 42px;
-        padding: 0 13px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius-sm);
-        background: rgba(255, 255, 255, 0.78);
-        color: var(--text);
-        cursor: pointer;
-        white-space: nowrap;
-        font-weight: 680;
-        line-height: 1.2;
-        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.82) inset;
-        backdrop-filter: blur(14px);
-        transition: transform 120ms ease, background 140ms ease, border-color 140ms ease;
-      }
-
-      .btn:hover {
-        border-color: var(--line-strong);
-        background: rgba(255, 255, 255, 0.76);
-        transform: translateY(-1px);
-      }
-
-      .btn.primary {
-        border-color: rgba(29, 117, 255, 0.38);
-        background: var(--accent);
-        color: #fff;
-        box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
-      }
-
-      .btn.primary:hover {
-        background: var(--accent-strong);
-      }
-
-      .btn.warn {
-        color: var(--amber);
-      }
-
-      .btn.danger {
-        color: var(--red);
-      }
-
-      .status-line {
-        color: var(--muted);
-        font-size: 13px;
-        text-align: right;
-        padding: 8px 10px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.72);
-        backdrop-filter: blur(14px);
-      }
-
-      .view {
-        display: none;
-      }
-
-      .view.active {
-        display: block;
-      }
-
-      .section-title {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: end;
-        margin-bottom: 14px;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: 24px;
-        line-height: 1.2;
-      }
-
-      h2 {
-        margin: 0;
-        font-size: 17px;
-      }
-
-      .grid {
-        display: grid;
-        gap: 14px;
-      }
-
-      .grid.three {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .panel {
-        background: var(--glass);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        padding: 16px;
-        backdrop-filter: blur(20px) saturate(142%);
-      }
-
-      .metric {
-        min-height: 92px;
-        display: grid;
-        align-content: space-between;
-      }
-
-      .metric-label {
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      .metric-value {
-        margin-top: 10px;
-        font-size: 23px;
-        font-weight: 760;
-        overflow-wrap: anywhere;
-      }
-
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-      }
-
-      .toolbar-select {
-        width: 180px;
-      }
-
-      .language-select {
-        width: 100%;
-      }
-
-      .table-wrap {
-        overflow-x: auto;
-        border-radius: var(--radius);
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 760px;
-      }
-
-      tbody tr {
-        transition: background 160ms ease;
-      }
-
-      tbody tr:hover {
-        background: rgba(232, 242, 255, 0.42);
-      }
-
-      th,
-      td {
-        padding: 11px 10px;
-        border-bottom: 1px solid rgba(121, 169, 237, 0.16);
-        text-align: left;
-        vertical-align: top;
-        font-size: 14px;
-      }
-
-      th {
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 680;
-        text-transform: uppercase;
-        background: rgba(245, 250, 255, 0.62);
-      }
-
-      td p {
-        margin: 0 0 7px;
-        line-height: 1.55;
-      }
-
-      .tag {
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
-        padding: 0 8px;
-        border-radius: 999px;
-        background: rgba(232, 242, 255, 0.62);
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 650;
-      }
-
-      .tag.enabled {
-        background: rgba(231, 248, 241, 0.76);
-        color: var(--green);
-      }
-
-      .tag.recommended {
-        background: rgba(232, 241, 255, 0.78);
-        color: var(--blue);
-      }
-
-      .tag.disabled,
-      .tag.ignored {
-        background: rgba(255, 242, 220, 0.78);
-        color: var(--amber);
-      }
-
-      .actions {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-
-      .codebox {
-        width: 100%;
-        min-height: 40px;
-        max-height: 520px;
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.2);
-        border-radius: var(--radius);
-        background: rgba(9, 23, 47, 0.92);
-        color: #e8f3ff;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.55;
-        overflow: auto;
-        white-space: pre-wrap;
-      }
-
-      .prompt-box {
-        width: 100%;
-        min-height: 96px;
-        padding: 13px;
-        border: 1px solid rgba(121, 169, 237, 0.18);
-        border-radius: var(--radius);
-        background: rgba(246, 251, 255, 0.72);
-        color: var(--text);
-        font-size: 13px;
-        line-height: 1.65;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-      }
-
-      .result-view {
-        display: grid;
-        gap: 12px;
-      }
-
-      .result-view:empty {
-        display: none;
-      }
-
-      .skill-detail-panel {
-        margin-top: 12px;
-      }
-
-      .result-card {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.72);
-        padding: 14px;
-        box-shadow: var(--shadow-soft);
-        backdrop-filter: blur(18px) saturate(140%);
-        overflow: hidden;
-      }
-
-      .marketplace-header {
-        display: grid;
-        gap: 5px;
-        margin: 18px 0 12px;
-      }
-
-      .marketplace-header p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 13px;
-        line-height: 1.6;
-      }
-
-      .marketplace-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-
-      .advanced-section {
-        margin-top: 18px;
-        border: 1px solid rgba(121, 169, 237, 0.18);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.42);
-        padding: 12px;
-        box-shadow: var(--shadow-soft);
-      }
-
-      .advanced-section summary {
-        cursor: pointer;
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 720;
-      }
-
-      .advanced-section[open] summary {
-        color: var(--text);
-        margin-bottom: 6px;
-      }
-
-      .marketplace-card {
-        display: grid;
-        gap: 10px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.72);
-        padding: 14px;
-        box-shadow: var(--shadow-soft);
-        backdrop-filter: blur(18px) saturate(140%);
-        overflow: hidden;
-      }
-
-      .marketplace-card h3 {
-        margin: 0;
-        font-size: 15px;
-      }
-
-      .marketplace-card p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.55;
-      }
-
-      .marketplace-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-
-      .memory-stack {
-        display: grid;
-        gap: 10px;
-      }
-
-      .memory-item {
-        display: grid;
-        gap: 8px;
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(248, 250, 253, 0.74);
-      }
-
-      .memory-item.compact {
-        padding: 11px;
-      }
-
-      .memory-item h3 {
-        margin: 0;
-        font-size: 14px;
-      }
-
-      .memory-item p,
-      .dossier-card p,
-      .dossier-session p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.6;
-      }
-
-      .dossier-card {
-        display: grid;
-        gap: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.74);
-        padding: 14px;
-        box-shadow: var(--shadow-soft);
-      }
-
-      .dossier-card.active {
-        border-color: rgba(59, 130, 246, 0.32);
-        background: rgba(242, 248, 255, 0.82);
-      }
-
-      .dossier-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-
-      .dossier-heading h3 {
-        margin: 0;
-        font-size: 16px;
-      }
-
-      .dossier-session {
-        display: grid;
-        gap: 8px;
-        padding: 10px;
-        border-radius: var(--radius);
-        background: rgba(248, 251, 255, 0.72);
-        border: 1px solid rgba(121, 169, 237, 0.12);
-      }
-
-      .status-pill {
-        display: inline-flex;
-        align-items: center;
-        width: fit-content;
-        min-height: 24px;
-        padding: 3px 8px;
-        border-radius: 999px;
-        border: 1px solid rgba(121, 169, 237, 0.2);
-        background: rgba(239, 246, 255, 0.76);
-        color: var(--text);
-        font-size: 12px;
-        font-weight: 650;
-      }
-
-      .status-pill.current {
-        border-color: rgba(28, 126, 71, 0.22);
-        background: rgba(232, 248, 239, 0.82);
-        color: #166534;
-      }
-
-      .status-pill.stale {
-        border-color: rgba(185, 126, 20, 0.24);
-        background: rgba(255, 248, 226, 0.84);
-        color: #8a5a0a;
-      }
-
-      .status-pill.reverted {
-        border-color: rgba(194, 65, 12, 0.22);
-        background: rgba(255, 241, 232, 0.84);
-        color: #9a3412;
-      }
-
-      .status-pill.unknown {
-        border-color: rgba(100, 116, 139, 0.22);
-        background: rgba(241, 245, 249, 0.82);
-        color: #475569;
-      }
-
-      .conflict-none {
-        color: var(--green);
-      }
-
-      .conflict-medium,
-      .conflict-high {
-        color: var(--amber);
-      }
-
-      .warning-list {
-        margin: 0;
-        padding-left: 18px;
-        color: var(--amber);
-        line-height: 1.6;
-      }
-
-      .result-card h2,
-      .result-card h3 {
-        margin: 0 0 10px;
-        font-size: 16px;
-      }
-
-      .result-card p {
-        margin: 0 0 8px;
-        color: var(--muted);
-        line-height: 1.55;
-      }
-
-      .detail-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .detail-item {
-        min-width: 0;
-        padding: 10px;
-        border-radius: var(--radius);
-        background: rgba(241, 247, 255, 0.62);
-        border: 1px solid rgba(121, 169, 237, 0.16);
-      }
-
-      .detail-label {
-        margin-bottom: 5px;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .detail-value {
-        overflow-wrap: anywhere;
-        font-weight: 650;
-      }
-
-      .mini-table {
-        display: grid;
-        gap: 6px;
-        margin: 10px 0;
-      }
-
-      .mini-table > div {
-        display: grid;
-        grid-template-columns: minmax(120px, 0.8fr) minmax(80px, 0.45fr) minmax(0, 1.8fr);
-        gap: 8px;
-        align-items: start;
-        padding: 9px 10px;
-        border: 1px solid rgba(121, 169, 237, 0.15);
-        border-radius: var(--radius);
-        background: rgba(248, 251, 255, 0.68);
-        font-size: 12px;
-      }
-
-      .mini-table span {
-        min-width: 0;
-        overflow-wrap: anywhere;
-      }
-
-      .plain-list {
-        margin: 0;
-        padding-left: 18px;
-        line-height: 1.7;
-      }
-
-      .plain-list li {
-        overflow-wrap: anywhere;
-      }
-
-      .empty-state {
-        min-height: 180px;
-        display: grid;
-        place-items: center;
-        border: 1px dashed rgba(121, 169, 237, 0.34);
-        border-radius: var(--radius);
-        color: var(--muted);
-        text-align: center;
-        background: rgba(255, 255, 255, 0.48);
-      }
-
-      .review-report {
-        display: grid;
-        gap: 12px;
-      }
-
-      .review-digest-card {
-        display: grid;
-        gap: 14px;
-        border-color: rgba(37, 99, 235, 0.18);
-        background: rgba(250, 253, 255, 0.78);
-      }
-
-      .review-digest-heading {
-        display: grid;
-        gap: 8px;
-      }
-
-      .review-digest-heading h2 {
-        margin: 0;
-        font-size: 18px;
-      }
-
-      .review-digest-heading p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.65;
-      }
-
-      .review-digest-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-
-      .review-section-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .review-section-item {
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.58);
-      }
-
-      .review-section-item h3 {
-        margin: 0 0 6px;
-        font-size: 14px;
-      }
-
-      .review-section-item p {
-        margin: 0 0 8px;
-        color: var(--muted);
-        line-height: 1.6;
-      }
-
-      .review-digest-block {
-        min-width: 0;
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.62);
-      }
-
-      .review-digest-block h3 {
-        margin: 0 0 8px;
-        font-size: 14px;
-      }
-
-      .review-digest-block p,
-      .review-digest-block li {
-        color: var(--muted);
-        line-height: 1.65;
-      }
-
-      .review-reading-list {
-        margin: 0;
-        padding-left: 20px;
-        line-height: 1.7;
-      }
-
-      .review-reading-list strong,
-      .review-reading-list span {
-        display: block;
-        overflow-wrap: anywhere;
-      }
-
-      .specweft-review-report {
-        display: grid;
-        gap: 12px;
-      }
-
-      .specweft-review-report section {
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(246, 251, 255, 0.66);
-      }
-
-      .specweft-review-report h1,
-      .specweft-review-report h2 {
-        margin: 0 0 8px;
-      }
-
-      .specweft-review-report h1 {
-        font-size: 20px;
-      }
-
-      .specweft-review-report h2 {
-        font-size: 15px;
-      }
-
-      .specweft-review-report p {
-        margin: 0;
-        color: var(--muted);
-        line-height: 1.65;
-      }
-
-      .specweft-review-report ul {
-        margin: 0;
-        padding-left: 20px;
-        line-height: 1.7;
-      }
-
-      .specweft-review-report dl,
-      .review-batch-card dl {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
-        margin: 10px 0;
-      }
-
-      .specweft-review-report dt,
-      .review-batch-card dt {
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 700;
-      }
-
-      .specweft-review-report dd,
-      .review-batch-card dd {
-        margin: 4px 0 0;
-        overflow-wrap: anywhere;
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 650;
-      }
-
-      .specweft-review-hero {
-        border-color: rgba(37, 99, 235, 0.18);
-        background: rgba(238, 244, 255, 0.78);
-      }
-
-      .specweft-review-details {
-        display: grid;
-        gap: 12px;
-        padding: 12px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.5);
-      }
-
-      .specweft-review-details summary {
-        cursor: pointer;
-        color: var(--muted);
-        font-weight: 720;
-      }
-
-      .specweft-review-details[open] summary {
-        margin-bottom: 10px;
-        color: var(--text);
-      }
-
-      .review-batch-list {
-        display: grid;
-        gap: 12px;
-        margin-top: 12px;
-      }
-
-      .review-batch-card {
-        display: grid;
-        gap: 8px;
-        padding: 14px;
-        border: 1px solid rgba(37, 99, 235, 0.16);
-        border-left: 3px solid rgba(37, 99, 235, 0.48);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.78);
-        box-shadow: var(--shadow-soft);
-      }
-
-      .review-batch-card h3 {
-        margin: 0;
-        font-size: 15px;
-      }
-
-      .source-reading-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .source-reading-item {
-        display: grid;
-        gap: 6px;
-        padding: 10px;
-        border: 1px solid rgba(121, 169, 237, 0.16);
-        border-radius: var(--radius-sm);
-        background: rgba(255, 255, 255, 0.72);
-      }
-
-      .source-reading-item strong,
-      .source-reading-item code,
-      .source-reading-item small {
-        overflow-wrap: anywhere;
-      }
-
-      .source-reading-item code {
-        padding: 7px 8px;
-        border-radius: 8px;
-        background: rgba(238, 245, 255, 0.78);
-        color: var(--text);
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 12px;
-      }
-
-      .source-reading-item small {
-        color: var(--muted);
-      }
-
-      .inline-code {
-        display: inline-block;
-        max-width: 100%;
-        padding: 2px 6px;
-        border-radius: 6px;
-        background: rgba(234, 243, 255, 0.76);
-        overflow-wrap: anywhere;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 12px;
-      }
-
-      .form-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
-        align-items: start;
-      }
-
-      .muted {
-        color: var(--muted);
-      }
-
-      .toast {
-        position: fixed;
-        right: 18px;
-        bottom: 18px;
-        max-width: min(420px, calc(100vw - 36px));
-        padding: 12px 14px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: rgba(255, 255, 255, 0.86);
-        box-shadow: var(--shadow);
-        backdrop-filter: blur(18px);
-        color: var(--text);
-        display: none;
-      }
-
-      .toast.show {
-        display: block;
-      }
-
-      @media (max-width: 880px) {
-        .shell {
-          grid-template-columns: 1fr;
-        }
-
-        .sidebar {
-          position: static;
-          height: auto;
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) 118px;
-          gap: 10px 12px;
-          align-items: start;
-          padding: 14px 15px 12px;
-          border-right: 0;
-          border-bottom: 1px solid var(--line);
-        }
-
-        .brand {
-          min-width: 0;
-          margin-bottom: 0;
-        }
-
-        .field-label {
-          margin-bottom: 0;
-          gap: 4px;
-        }
-
-        .nav {
-          grid-column: 1 / -1;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 6px;
-        }
-
-        .nav button {
-          min-height: 40px;
-          justify-content: center;
-          padding: 4px 8px;
-          text-align: center;
-          white-space: normal;
-          font-size: 13px;
-          line-height: 1.2;
-        }
-
-        .nav button.active {
-          box-shadow: inset 0 -3px 0 rgba(37, 99, 235, 0.72);
-        }
-
-        .topbar,
-        .topbar-main,
-        .grid.three,
-        .marketplace-grid,
-        .detail-grid,
-        .form-row,
-        .specweft-review-report dl,
-        .review-batch-card dl {
-          grid-template-columns: 1fr;
-        }
-
-        .main {
-          padding: 14px;
-        }
-
-        .topbar {
-          gap: 10px;
-          margin-bottom: 18px;
-          padding: 12px;
-        }
-
-        .repo-row {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
-        }
-
-        .repo-row > select,
-        .repo-row > input {
-          grid-column: 1 / -1;
-        }
-
-        .requirement-row {
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 8px;
-        }
-
-        #requirementSelect {
-          grid-column: 1 / -1;
-        }
-
-        .btn {
-          padding: 0 10px;
-          white-space: normal;
-          font-size: 13px;
-        }
-
-        .toolbar-select {
-          width: 100%;
-        }
-
-        .status-line {
-          text-align: left;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <div class="mark">S</div>
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>SpecWeft</h1>
+        <div class="tagline">AI Coding Agent 伴侣层</div>
+      </div>
+
+      <div class="project-picker">
+        <label for="projectSelect">当前项目</label>
+        <select id="projectSelect" class="project-select">
+          <option value="${escapeAttribute(repoPath)}">${escapeHtml(repoPath)}</option>
+        </select>
+      </div>
+
+      <nav class="nav" aria-label="SpecWeft navigation">
+        <a href="#overview" class="nav-item" data-view-target="overview">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2 7-7 7 7 2 2M5 10v10a1 1 0 001 1h3m10-11v10a1 1 0 01-1 1h-3m-6 0v-4a1 1 0 011-1h2a1 1 0 011 1v4"/></svg>
+          概览
+        </a>
+        <a href="#skills" class="nav-item active" data-view-target="skills">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2"/></svg>
+          Skills
+        </a>
+        <a href="#mcp" class="nav-item" data-view-target="mcp">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          MCP 服务
+        </a>
+        <a href="#config" class="nav-item" data-view-target="config">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          项目配置
+        </a>
+        <a href="#history" class="nav-item" data-view-target="history">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          修改历史
+        </a>
+        <a href="#threads" class="nav-item" data-view-target="threads">
+          <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          需求线程
+        </a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h2 id="pageTitle">Skills 管理</h2>
+        <div id="topbarActionsOverview" class="topbar-actions">
+          <button class="btn btn-secondary" data-action="refresh">刷新</button>
+        </div>
+        <div id="topbarActionsSkills" class="topbar-actions active">
+          <button class="btn btn-secondary" data-action="open-modal" data-modal="marketplaceModal">浏览市场</button>
+          <button class="btn btn-primary" data-action="analyze-skills">重新分析</button>
+        </div>
+        <div id="topbarActionsMcp" class="topbar-actions">
+          <button class="btn btn-secondary" data-action="open-modal" data-modal="mcpMarketplaceModal">浏览 MCP 市场</button>
+          <button class="btn btn-primary" data-action="refresh-mcps">刷新列表</button>
+        </div>
+        <div id="topbarActionsConfig" class="topbar-actions">
+          <button class="btn btn-secondary" data-action="reset-settings">重置默认</button>
+          <button class="btn btn-primary" data-action="save-settings">保存配置</button>
+        </div>
+        <div id="topbarActionsHistory" class="topbar-actions">
+          <button class="btn btn-primary" data-action="generate-review">生成当前修改讲解</button>
+        </div>
+        <div id="topbarActionsThreads" class="topbar-actions">
+          <button class="btn btn-primary" data-action="open-modal" data-modal="newThreadModal">新建线程</button>
+        </div>
+      </div>
+
+      <section id="view-overview" class="content view">
+        <div id="overviewStats" class="stats"></div>
+        <div class="split">
           <div>
-            <div class="brand-title">SpecWeft</div>
-            <div class="brand-subtitle" data-i18n="brandSubtitle">本地 Agent 控制台</div>
+            <h3 class="soft-title">最近活动</h3>
+            <div id="activityList" class="list"></div>
+          </div>
+          <div>
+            <h3 class="soft-title">活跃需求线程</h3>
+            <div id="activeThreadList" class="list"></div>
           </div>
         </div>
-        <label class="field-label">
-          <span data-i18n="language">语言</span>
-          <select id="languageSelect" class="select language-select">
-            <option value="zh-CN">中文</option>
-            <option value="en-US">English</option>
-          </select>
-        </label>
-        <nav class="nav">
-          <button class="active" data-view-button="overview" aria-pressed="true" data-i18n="navOverview">总览</button>
-          <button data-view-button="tools" aria-pressed="false" data-i18n="navTools">能力中心</button>
-          <button data-view-button="runtime" aria-pressed="false" data-i18n="navRuntime">运行配置</button>
-          <button data-view-button="review" aria-pressed="false" data-i18n="navReview">代码讲解</button>
-          <button data-view-button="memory" aria-pressed="false" data-i18n="navMemory">记忆</button>
-          <button data-view-button="connect" aria-pressed="false" data-i18n="navConnect">接入配置</button>
-        </nav>
-      </aside>
+      </section>
 
-      <main class="main">
-        <div class="topbar">
-          <div class="topbar-main">
-            <div class="repo-row">
-              <select id="projectSelect" class="select" aria-label="Project"></select>
-              <input id="repoInput" class="input" aria-label="Repository path" />
-              <button id="registerProjectButton" class="btn" data-i18n="registerProject">登记项目</button>
-              <button id="refreshButton" class="btn primary" data-i18n="refresh">刷新</button>
-              <button id="poolButton" class="btn" data-i18n="initPool">初始化工具池</button>
-            </div>
-            <div id="statusLine" class="status-line" data-status-key="idle">空闲</div>
-          </div>
-          <div class="requirement-row">
-            <select id="requirementSelect" class="select" aria-label="Requirement"></select>
-            <input id="requirementTitleInput" class="input" data-i18n-placeholder="requirementTitlePlaceholder" placeholder="新需求标题" />
-            <button id="createRequirementButton" class="btn" data-i18n="createRequirement">新建需求</button>
-          </div>
+      <section id="view-skills" class="content view active">
+        <div class="tabs">
+          <button class="tab active" data-action="switch-tab" data-tab-group="skills" data-tab="installed">已安装</button>
+          <button class="tab" data-action="switch-tab" data-tab-group="skills" data-tab="recommended">智能推荐</button>
         </div>
+        <div id="skillTabInstalled" data-tab-panel="skills:installed">
+          <div id="skillStats" class="stats"></div>
+          <div id="installedSkills" class="card-grid"></div>
+        </div>
+        <div id="skillTabRecommended" data-tab-panel="skills:recommended" style="display:none">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title">按当前需求推荐 Skill</div>
+            <div class="card-desc">输入你准备交给 Codex 或 Claude 的需求，SpecWeft 只匹配本地已安装和全局池里的 Skill；需要外部候选时再点浏览市场。</div>
+            <div class="inline-row">
+              <input id="skillTaskInput" class="project-select" style="background:var(--surface);border-color:var(--border);color:var(--fg);max-width:560px" placeholder="例：帮我优化登录页的表单校验和错误提示" />
+              <button class="btn btn-primary" data-action="analyze-skills">分析需求</button>
+            </div>
+          </div>
+          <div id="recommendedSkills" class="card-grid"></div>
+        </div>
+      </section>
 
-        <section id="overview" class="view active" data-view="overview" aria-hidden="false">
-          <div class="section-title">
-            <h1 data-i18n="overview">总览</h1>
-          </div>
-          <div class="grid three">
-            <div class="panel metric">
-              <div class="metric-label" data-i18n="project">项目</div>
-              <div id="projectName" class="metric-value">-</div>
-            </div>
-            <div class="panel metric">
-              <div class="metric-label" data-i18n="languages">语言</div>
-              <div id="languages" class="metric-value">-</div>
-            </div>
-            <div class="panel metric">
-              <div class="metric-label" data-i18n="enabledTools">已启用工具</div>
-              <div id="enabledCount" class="metric-value">-</div>
-            </div>
-          </div>
-          <div id="recordingStatusOutput" class="result-view"></div>
-          <div id="workSegmentOutput" class="result-view"></div>
-          <div class="panel grid">
-            <div class="form-row">
-              <input id="taskInput" class="input" data-i18n-placeholder="taskPlaceholder" placeholder="输入需求，例如：帮我优化登录校验" />
-              <button id="prepareTaskButton" class="btn primary" data-i18n="prepareTask">准备任务</button>
-            </div>
-            <div id="preparedTaskOutput" class="result-view"></div>
-          </div>
-        </section>
+      <section id="view-mcp" class="content view">
+        <div class="search-bar">
+          <input id="mcpSearchInput" type="text" placeholder="搜索 MCP 服务…" />
+        </div>
+        <div id="mcpList" class="list"></div>
+      </section>
 
-        <section id="tools" class="view" data-view="tools" aria-hidden="true">
-          <div class="section-title">
-            <h1 data-i18n="tools">能力中心</h1>
-            <div class="toolbar">
-              <select id="toolFilterSelect" class="select toolbar-select" aria-label="Tool type filter">
-                <option value="all" data-i18n="filterAll">全部</option>
-                <option value="mcp" data-i18n="filterMcp">MCP</option>
-                <option value="skill" data-i18n="filterSkill">Skill</option>
-                <option value="cli" data-i18n="filterCli">CLI</option>
+      <section id="view-config" class="content view">
+        <div class="form-grid">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title">修改记录</div>
+            <div class="card-meta">SpecWeft 在 AI 写入代码后自动捕获的内容</div>
+            <div class="form-group">
+              <label>自动记录 Diff</label>
+              <div class="inline-row">
+                <button id="autoRecordDiffInput" class="toggle" data-setting-toggle="autoRecordDiff" type="button"></button>
+                <span class="hint">每次文件变更后生成带时间戳的 diff 快照</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>自动关联需求线程</label>
+              <div class="inline-row">
+                <button id="autoLinkRequirementInput" class="toggle" data-setting-toggle="autoLinkRequirement" type="button"></button>
+                <span class="hint">将修改自动归入当前活跃的需求线程</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="retentionDaysInput">记录保留天数</label>
+              <div class="inline-row">
+                <input id="retentionDaysInput" type="number" min="7" style="width:110px" />
+                <span class="hint">天后自动清理旧记录，0 表示永久保留</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title">上下文记忆</div>
+            <div class="card-meta">需求线程的上下文窗口与压缩策略</div>
+            <div class="form-group">
+              <label for="maxRetainedTurnsInput">最大保留轮数</label>
+              <div class="inline-row">
+                <input id="maxRetainedTurnsInput" type="number" min="1" max="200" style="width:110px" />
+                <span class="hint">超出后按压缩策略处理</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="compressionStrategyInput">压缩策略</label>
+              <select id="compressionStrategyInput">
+                <option value="summary">摘要压缩 — 保留语义，适合长期需求</option>
+                <option value="sliding-window">滑动窗口 — 只保留最近上下文</option>
+                <option value="none">不压缩 — 适合短线程</option>
               </select>
-              <button id="recommendButton" class="btn primary" data-i18n="refreshRecommendations">刷新能力</button>
+              <div class="hint">恢复线程时默认只给 Agent 入口摘要，不把所有历史硬塞进上下文。</div>
+            </div>
+            <div class="form-group">
+              <label for="ignorePathsInput">忽略路径（每行一个）</label>
+              <textarea id="ignorePathsInput" placeholder="node_modules/&#10;dist/&#10;.next/" style="font-family:ui-monospace,monospace;font-size:13px"></textarea>
             </div>
           </div>
-          <div class="panel table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th data-i18n="name">名称</th>
-                  <th data-i18n="type">类型</th>
-                  <th data-i18n="status">状态</th>
-                  <th data-i18n="risk">风险</th>
-                  <th data-i18n="reason">原因 / 权限</th>
-                  <th data-i18n="actions">操作</th>
-                </tr>
-              </thead>
-              <tbody id="recommendationRows"></tbody>
-            </table>
-          </div>
-          <div id="skillDetailOutput" class="result-view skill-detail-panel"></div>
-          <div class="marketplace-header">
-            <h2 data-i18n="marketplaceSkills">市场 Skill 候选</h2>
-            <p data-i18n="marketplaceNotice">根据当前项目关键词搜索外部 Skill，只做候选展示，不会自动应用或覆盖本地规范。</p>
-          </div>
-          <div class="panel grid marketplace-search">
-            <div class="form-row">
-              <input id="marketplaceKeywordInput" class="input" data-i18n-placeholder="marketplaceKeywordPlaceholder" placeholder="搜索 Skill 关键词，例如 java" />
-              <button id="marketplaceSearchButton" class="btn primary" data-i18n="searchMarketplace">搜索市场 Skill</button>
-            </div>
-          </div>
-          <div id="marketplaceSkills" class="marketplace-grid"></div>
 
-          <details class="advanced-section">
-            <summary>
-              <span data-i18n="advancedMcpMarketplace">高级：MCP 市场候选</span>
-            </summary>
-            <div class="marketplace-header">
-              <h2 data-i18n="marketplaceMcps">市场 MCP 候选</h2>
-              <p data-i18n="marketplaceMcpNotice">MCP 适合需要连接外部系统、浏览器、数据库或远程服务的场景。它是可选增强，不是 SpecWeft 的默认主线。</p>
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title">Skills 与 MCP</div>
+            <div class="card-meta">控制推荐来源和本地 MCP 注册行为</div>
+            <div class="form-group">
+              <label for="skillRegistryUrlInput">Skill 注册表地址</label>
+              <input id="skillRegistryUrlInput" type="text" placeholder="https://skillsmp.com/api/skills" />
             </div>
-            <div class="panel grid marketplace-search">
-              <div class="form-row">
-                <input id="marketplaceMcpKeywordInput" class="input" data-i18n-placeholder="marketplaceMcpKeywordPlaceholder" placeholder="搜索 MCP 关键词，例如 github、playwright、postgres" />
-                <button id="marketplaceMcpSearchButton" class="btn primary" data-i18n="searchMarketplaceMcp">搜索市场 MCP</button>
+            <div class="form-group">
+              <label>自动检查 Skill 更新</label>
+              <div class="inline-row">
+                <button id="autoCheckSkillUpdatesInput" class="toggle" data-setting-toggle="autoCheckSkillUpdates" type="button"></button>
+                <span class="hint">项目打开时静默检查已安装 Skills 的新版本</span>
               </div>
             </div>
-            <div id="marketplaceMcps" class="marketplace-grid"></div>
-          </details>
-        </section>
-
-        <section id="runtime" class="view" data-view="runtime" aria-hidden="true">
-          <div class="section-title">
-            <h1 data-i18n="runtime">运行配置</h1>
-            <button id="assemblyButton" class="btn primary" data-i18n="buildAssembly">生成配置</button>
-          </div>
-          <div id="assemblyOutput" class="result-view"></div>
-        </section>
-
-        <section id="review" class="view" data-view="review" aria-hidden="true">
-          <div class="section-title">
-            <h1 data-i18n="review">代码讲解</h1>
-          </div>
-          <div class="panel grid">
-            <div class="form-row">
-              <input id="reviewTitle" class="input" data-i18n-placeholder="reviewTitlePlaceholder" placeholder="代码讲解标题" />
-              <button id="reviewButton" class="btn primary" data-i18n="createReview">生成讲解</button>
-            </div>
-            <div id="reviewOutput" class="result-view"></div>
-          </div>
-        </section>
-
-        <section id="memory" class="view" data-view="memory" aria-hidden="true">
-          <div class="section-title">
-            <h1 data-i18n="memory">记忆</h1>
-          </div>
-          <div class="panel grid">
-            <div class="form-row">
-              <input id="keywordInput" class="input" data-i18n-placeholder="keywordPlaceholder" placeholder="关键词" />
-              <div class="actions">
-                <button id="digestButton" class="btn" data-i18n="refreshDigest">刷新摘要</button>
-                <button id="recallButton" class="btn" data-i18n="recall">召回</button>
-                <button id="handoffButton" class="btn primary" data-i18n="createHandoff">生成交接上下文</button>
+            <div class="form-group">
+              <label for="mcpTimeoutInput">MCP stdio 默认超时（秒）</label>
+              <div class="inline-row">
+                <input id="mcpTimeoutInput" type="number" min="5" style="width:110px" />
+                <span class="hint">超时后 SpecWeft 标记该 MCP 为不可用</span>
               </div>
             </div>
-            <div id="memoryProtectionOutput" class="result-view"></div>
-            <div id="requirementDossierOutput" class="result-view"></div>
-            <div id="workSegmentMemoryOutput" class="result-view"></div>
-            <div id="memoryDigestOutput" class="result-view"></div>
-            <div id="timelineOutput" class="result-view"></div>
-            <div id="recallOutput" class="result-view"></div>
-            <div id="handoffOutput" class="result-view"></div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="connect" class="view" data-view="connect" aria-hidden="true">
-          <div class="section-title">
-            <h1 data-i18n="connect">接入配置</h1>
-            <button id="connectButton" class="btn primary" data-i18n="generateConfig">生成配置</button>
-          </div>
-          <div id="connectOutput" class="result-view"></div>
-          <div id="llmConfigOutput" class="result-view"></div>
-        </section>
-      </main>
+      <section id="view-history" class="content view">
+        <div class="search-bar">
+          <input id="historySearchInput" type="text" placeholder="搜索修改记录…" />
+        </div>
+        <div class="inline-row" style="margin-bottom:24px">
+          <button class="btn btn-primary" data-history-filter="all">全部</button>
+          <button class="btn btn-secondary" data-history-filter="current">当前代码</button>
+          <button class="btn btn-secondary" data-history-filter="stale">历史版本</button>
+        </div>
+        <div id="historyList" class="list"></div>
+      </section>
+
+      <section id="view-threads" class="content view">
+        <div class="search-bar" style="max-width:440px">
+          <input id="threadSearchInput" type="text" placeholder="搜索需求线程…" />
+        </div>
+        <div id="threadList" style="display:flex;flex-direction:column;gap:12px"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="newThreadModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3>新建需求线程</h3>
+          <p>创建一个新的需求上下文，方便跨 Session 恢复</p>
+        </div>
+        <button class="close-btn" data-action="close-modal" data-modal="newThreadModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="newThreadTitle">需求标题</label>
+          <input id="newThreadTitle" type="text" placeholder="例：用户权限体系重构" />
+        </div>
+        <div class="form-group">
+          <label for="newThreadSummary">需求描述</label>
+          <textarea id="newThreadSummary" placeholder="详细描述你的需求，SpecWeft 会将此作为上下文基础保存…"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="newThreadKeywords">关键词</label>
+          <input id="newThreadKeywords" type="text" placeholder="权限, 登录, AuthService" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-modal" data-modal="newThreadModal">取消</button>
+        <button class="btn btn-primary" data-action="create-thread">创建线程</button>
+      </div>
     </div>
-    <div id="toast" class="toast"></div>
-    <script>
-      const messages = {
-        "zh-CN": {
-          brandSubtitle: "本地 Agent 控制台",
-          navOverview: "总览",
-          navTools: "能力中心",
-          navRuntime: "运行配置",
-          navReview: "代码讲解",
-          navMemory: "记忆",
-          navConnect: "接入配置",
-          language: "语言",
-          refresh: "刷新",
-          initPool: "初始化工具池",
-          overview: "总览",
-          project: "项目",
-          projectSelectorPlaceholder: "选择已登记项目",
-          registerProject: "登记项目",
-          projectRegistered: "项目已登记",
-          requirementSelectorPlaceholder: "选择当前需求",
-          requirementTitlePlaceholder: "新需求标题，例如 Skill 详情预览",
-          createRequirement: "新建需求",
-          requirementCreated: "需求已创建",
-          requirementActivated: "当前需求已切换",
-          currentRequirement: "当前需求",
-          reviewCount: "讲解次数",
-          recordingStatus: "记录状态",
-          recordingClean: "当前没有未提交改动",
-          recordingRecorded: "当前 diff 已记录",
-          recordingUnrecorded: "当前 diff 未记录",
-          recordingChanged: "代码已在记录后继续变化",
-          recordCurrentDiff: "记录当前 diff",
-          recordingCurrentDiff: "正在记录当前 diff",
-          workSegments: "工作段",
-          activeWorkSegment: "当前工作段",
-          recentWorkSegments: "最近工作段",
-          noWorkSegments: "还没有工作段。开始修改前由 Agent 调用 start_work_segment 后，这里会显示本次需求边界。",
-          segmentStatus_active: "进行中",
-          segmentStatus_recorded: "已记录",
-          segmentStatus_interrupted: "已中断",
-          segmentStatus_abandoned: "已放弃",
-          baselineChangedFiles: "开始时已有改动",
-          newChangedFiles: "本工作段新增改动",
-          carriedChangedFiles: "沿用旧改动",
-          prepareTask: "准备任务",
-          preparingTask: "正在准备任务",
-          taskPrepared: "任务上下文已生成",
-          taskPlaceholder: "输入需求，例如：帮我优化登录校验",
-          preparedTask: "任务上下文",
-          taskAnalysis: "任务分析",
-          intent: "意图",
-          ambiguity: "清晰度",
-          confidence: "置信度",
-          routingReason: "路由依据",
-          suggestedSearches: "建议搜索词",
-          matchSource: "匹配来源",
-          fileRole: "文件角色",
-          clarifiedGoal: "补全后的目标",
-          missingQuestions: "需要补充的问题",
-          acceptanceCriteria: "验收标准",
-          codePointers: "相关文件",
-          skillSuggestions: "推荐 Skills",
-          matchedSignals: "匹配信号",
-          usageHint: "使用建议",
-          localRuleNote: "本地规则提醒",
-          memorySuggestions: "相关记忆",
-          executionPlan: "执行路线",
-          noExecutionPlan: "还没有生成执行路线。",
-          agentGuardrail: "Agent 护栏",
-          boundaryRequired: "需要工作段边界",
-          startWorkSegmentInput: "开始工作段参数",
-          recordCurrentDiffInput: "记录 diff 参数",
-          finalResponseChecklist: "最终回复检查",
-          agentInstructions: "Agent 执行建议",
-          noPreparedTaskYet: "还没有准备任务上下文。",
-          noCodePointers: "暂时没有强相关文件。",
-          noSkillSuggestions: "暂时没有推荐 Skill。",
-          noMemorySuggestions: "暂时没有相关记忆。",
-          matchedRequirement: "命中的需求线",
-          noMatchedRequirement: "没有命中历史需求线，本次会按新需求边界记录。",
-          requirementMatchReason: "命中原因",
-          startWorkSegmentTool: "开始工作段",
-          recordDiffTool: "记录 diff",
-          requirementDossier: "需求档案",
-          requirementDossierHint: "按需求整理多次修改，先看档案，再恢复具体需求。",
-          noRequirementDossier: "还没有需求档案。",
-          activeRequirement: "当前需求",
-          requirementStatus: "需求状态",
-          nextAction: "下一步建议",
-          keyFiles: "关键文件",
-          latestSummary: "最近总结",
-          reviewSessions: "修改记录",
-          sessionsOmitted: "已省略修改记录",
-          timeline: "需求时间线",
-          timelineSummary: "时间线摘要",
-          timelineEmpty: "还没有需求记忆。",
-          currentCount: "当前",
-          staleCount: "过期",
-          revertedCount: "已回滚",
-          unknownCount: "未知",
-          languages: "语言",
-          enabledTools: "已启用工具",
-          tools: "能力中心",
-          filterAll: "全部",
-          filterMcp: "MCP",
-          filterSkill: "Skill",
-          filterCli: "CLI",
-          noToolsForFilter: "当前筛选下没有能力。",
-          advancedMcpMarketplace: "高级：MCP 市场候选",
-          marketplaceMcps: "市场 MCP 候选",
-          marketplaceMcpNotice: "MCP 适合连接外部系统、浏览器、数据库或远程服务。它是可选增强，不是默认主线。",
-          marketplaceMcpKeywordPlaceholder: "搜索 MCP 关键词，例如 github、playwright、postgres",
-          searchMarketplaceMcp: "搜索市场 MCP",
-          searchingMarketplaceMcp: "正在搜索市场 MCP",
-          marketplaceMcpHiddenByFilter: "当前只筛选 Skill，市场 MCP 候选已隐藏。",
-          noMarketplaceMcps: "还没有搜索 MCP 候选。",
-          applyMarketplaceMcp: "加入并启用",
-          applyingMarketplaceMcp: "正在加入 MCP",
-          marketplaceMcpApplied: "市场 MCP 已加入并启用",
-          envVars: "环境变量",
-          permissions: "权限",
-          installable: "可安装",
-          installable_yes: "是",
-          installable_no: "需手动配置",
-          marketplaceSkills: "市场 Skill 候选",
-          marketplaceNotice: "根据当前项目关键词搜索外部 Skill，只做候选展示，不会自动应用或覆盖本地规范。",
-          marketplaceKeywordPlaceholder: "搜索 Skill 关键词，例如 java",
-          searchMarketplace: "搜索市场 Skill",
-          searchingMarketplace: "正在搜索市场 Skill",
-          marketplaceHiddenByFilter: "当前只筛选 MCP，市场 Skill 候选已隐藏。",
-          noMarketplaceSkills: "还没有搜索 Skill 候选。",
-          searchedKeywords: "搜索关键词",
-          matchedKeyword: "匹配关键词",
-          conflictLevel: "冲突风险",
-          conflict_none: "无明显冲突",
-          conflict_low: "低",
-          conflict_medium: "中",
-          conflict_high: "高",
-          marketplaceWarnings: "搜索提示",
-          openGithub: "查看 GitHub",
-          applyMarketplaceSkill: "加入并启用",
-          applyingMarketplaceSkill: "正在加入 Skill",
-          marketplaceSkillApplied: "市场 Skill 已加入并启用",
-          viewSkillDetail: "详情",
-          previewSkillContent: "预览内容",
-          loadingSkillDetail: "正在读取 Skill 内容",
-          skillDetail: "Skill 详情",
-          skillContent: "Skill 内容",
-          contentSource: "内容来源",
-          source: "来源",
-          stars: "Stars",
-          forks: "Forks",
-          refreshRecommendations: "刷新能力",
-          name: "名称",
-          type: "类型",
-          status: "状态",
-          risk: "风险",
-          reason: "原因",
-          action: "动作",
-          when: "时机",
-          tool: "工具",
-          actions: "操作",
-          runtime: "运行配置",
-          buildAssembly: "生成配置",
-          review: "代码讲解",
-          reviewTitlePlaceholder: "代码讲解标题",
-          createReview: "生成讲解",
-          reviewDigest: "讲解摘要",
-          requirementContext: "需求上下文",
-          oneLineSummary: "一句话总结",
-          whyChanged: "为什么这样改",
-          implementationPath: "实现思路",
-          readingPath: "阅读入口",
-          reviewNotes: "注意点",
-          validation: "验证建议",
-          requirementSections: "需求分块",
-          sectionWhy: "为什么",
-          sectionImplementation: "实现",
-          sectionEntry: "入口",
-          confidenceReasons: "判断依据",
-          advancedReviewDetails: "高级详情：需要深挖时再展开",
-          reviewOverview: "本次修改概览",
-          reviewOverviewBatches: "修改批次",
-          reviewOverviewReadingOrder: "概览阅读顺序",
-          reviewBatchSourceGroups: "关联分组",
-          implementationSummary: "实现内容总结",
-          sourceReadingGuide: "高级源码详情",
-          reviewWalkthrough: "建议阅读顺序",
-          risks: "风险提示",
-          testSuggestions: "测试建议",
-          changeGroups: "改动分组",
-          groupMatchReason: "分组依据",
-          groupConfidence: "分组置信度",
-          requirementBlocks: "需求拆解",
-          requirementBlockKind: "块类型",
-          requirementBlockEvidence: "判断证据",
-          requirementBlockAction: "建议动作",
-          noRequirementBlocks: "还没有识别到需求拆解块。",
-          reviewFocus: "Review 重点",
-          groupTestSuggestions: "验证建议",
-          noChangeGroups: "还没有识别到改动分组。",
-          memory: "记忆",
-          keywordPlaceholder: "关键词",
-          recall: "召回",
-          createHandoff: "生成交接上下文",
-          refreshDigest: "刷新摘要",
-          memoryDigest: "记忆摘要入口",
-          memoryDigestHint: "先读摘要，再按需求恢复上下文。",
-          totalThreads: "需求线",
-          sessionCount: "记忆数",
-          latestUpdatedAt: "最近更新",
-          restoreHint: "恢复方式",
-          handoff: "线程交接",
-          handoffPrompt: "新线程提示词",
-          recoveredSessions: "恢复到的记忆",
-          generatedAt: "生成时间",
-          handoffReady: "交接上下文已生成",
-          connect: "接入配置",
-          generateConfig: "生成配置",
-          agentWorkflow: "Agent 自动调用顺序",
-          codexConfig: "Codex 配置片段",
-          claudeConfig: "Claude 配置 JSON",
-          workflowBootstrap: "打开项目后先调用 specweft.bootstrap_session 获取项目画像和工作流。",
-          workflowPrepare: "每次收到需求后调用 specweft.prepare_task，补全描述、定位文件并推荐 Skill。",
-          workflowSegment: "修改前调用 specweft.start_work_segment，给本次需求留下本地边界。",
-          workflowDigest: "需要延续旧需求时先读 specweft.get_memory_digest 和 specweft.get_requirement_dossier，再只恢复相关需求记忆。",
-          workflowRecord: "修改代码后调用 specweft.record_current_diff，保存讲解和记忆。",
-          llmReviewConfig: "LLM 讲解配置",
-          llmEnabled: "已启用",
-          llmDisabled: "未启用",
-          memoryProtection: "需求记忆保护",
-          keyConfigured: "密钥状态",
-          keyEnv: "密钥变量",
-          detected: "已检测到",
-          encrypted: "已加密",
-          plaintext: "明文",
-          missing: "缺失",
-          encryptedFiles: "已加密文件",
-          plaintextFiles: "明文文件",
-          missingFiles: "缺失文件",
-          noProtectionWarnings: "暂无保护提醒。",
-          memoryProtectionHint: "如需加密需求记忆，设置 SPECWEFT_MEMORY_KEY 后运行 specweft protect。报告 Markdown 仍保持明文，方便人工 review。",
-          model: "模型",
-          baseUrl: "Base URL",
-          maxDiffChars: "最大 diff 字符数",
-          apiKeyEnv: "密钥环境变量",
-          notDetected: "未检测到",
-          llmConfigHint: "SpecWeft 只检测环境变量是否存在，不会在界面展示密钥。设置 SPECWEFT_LLM_API_KEY 后，review 会在规则讲解基础上追加 LLM 总结；远程调用默认 15 秒超时，可用 SPECWEFT_LLM_TIMEOUT_MS 调整。",
-          idle: "空闲",
-          loading: "加载中",
-          ready: "就绪",
-          updating: "更新中",
-          creatingReview: "正在生成代码讲解",
-          loadingMemory: "正在读取记忆",
-          error: "出错",
-          initializingPool: "正在初始化工具池",
-          selectionUpdated: "选择已更新",
-          poolInitialized: "工具池已初始化",
-          reviewSaved: "代码讲解已保存",
-          requestFailed: "请求失败",
-          networkFailed: "网络请求失败",
-          defaultReviewTitle: "SpecWeft UI 代码讲解",
-          actionEnable: "启用",
-          actionDisable: "禁用",
-          actionIgnore: "忽略",
-          status_enabled: "已启用",
-          status_recommended: "推荐",
-          status_disabled: "已禁用",
-          status_ignored: "已忽略",
-          risk_low: "低",
-          risk_medium: "中",
-          risk_high: "高",
-          type_mcp: "MCP",
-          type_skill: "Skill",
-          type_cli: "CLI",
-          type_hook: "Hook",
-          status_available: "可用",
-          noMcpServers: "当前项目还没有启用 MCP 服务。",
-          noSkills: "当前项目还没有启用 Skill。",
-          mcpServers: "MCP 服务",
-          skills: "Skills",
-          command: "命令",
-          arguments: "参数",
-          path: "路径",
-          clientCommand: "客户端启动命令",
-          exposedTools: "暴露工具",
-          serverName: "服务名",
-          transport: "传输方式",
-          reportPath: "报告路径",
-          memoryId: "记忆 ID",
-          codeStatus: "代码状态",
-          expiresAt: "过期时间",
-          summary: "摘要",
-          changedFiles: "修改文件",
-          keywords: "关键词",
-          noChangedFiles: "没有记录修改文件",
-          noKeywords: "没有关键词",
-          noSessions: "没有找到相关记忆。",
-          noHandoffYet: "还没有生成线程交接上下文。",
-          noReviewYet: "还没有生成代码讲解。",
-          noSkillDetailYet: "选择一个 Skill 查看具体内容。",
-          noRuntimeYet: "暂无运行配置。",
-          noConnectYet: "暂无接入配置。",
-          noLlmConfigYet: "暂无 LLM 配置状态。",
-          noMemoryProtectionYet: "暂无记忆保护状态。"
-        },
-        "en-US": {
-          brandSubtitle: "Local agent console",
-          navOverview: "Overview",
-          navTools: "Capability Center",
-          navRuntime: "Runtime",
-          navReview: "Review",
-          navMemory: "Memory",
-          navConnect: "Connect",
-          language: "Language",
-          refresh: "Refresh",
-          initPool: "Init Pool",
-          overview: "Overview",
-          project: "Project",
-          projectSelectorPlaceholder: "Select registered project",
-          registerProject: "Register Project",
-          projectRegistered: "Project registered",
-          requirementSelectorPlaceholder: "Select current requirement",
-          requirementTitlePlaceholder: "New requirement title, e.g. Skill detail preview",
-          createRequirement: "New Requirement",
-          requirementCreated: "Requirement created",
-          requirementActivated: "Current requirement switched",
-          currentRequirement: "Current requirement",
-          reviewCount: "Review count",
-          recordingStatus: "Recording status",
-          recordingClean: "No uncommitted changes",
-          recordingRecorded: "Current diff is recorded",
-          recordingUnrecorded: "Current diff is not recorded",
-          recordingChanged: "Code changed after the latest record",
-          recordCurrentDiff: "Record Current Diff",
-          recordingCurrentDiff: "Recording current diff",
-          workSegments: "Work Segments",
-          activeWorkSegment: "Active work segment",
-          recentWorkSegments: "Recent work segments",
-          noWorkSegments: "No work segment yet. Once an agent calls start_work_segment before editing, the task boundary appears here.",
-          segmentStatus_active: "Active",
-          segmentStatus_recorded: "Recorded",
-          segmentStatus_interrupted: "Interrupted",
-          segmentStatus_abandoned: "Abandoned",
-          baselineChangedFiles: "Existing changes at start",
-          newChangedFiles: "New changes in segment",
-          carriedChangedFiles: "Carried changes",
-          prepareTask: "Prepare Task",
-          preparingTask: "Preparing task",
-          taskPrepared: "Task context prepared",
-          taskPlaceholder: "Enter a task, e.g. improve login validation",
-          preparedTask: "Task Context",
-          taskAnalysis: "Task Analysis",
-          intent: "Intent",
-          ambiguity: "Ambiguity",
-          confidence: "Confidence",
-          routingReason: "Routing reason",
-          suggestedSearches: "Suggested searches",
-          matchSource: "Match source",
-          fileRole: "File role",
-          clarifiedGoal: "Clarified goal",
-          missingQuestions: "Missing questions",
-          acceptanceCriteria: "Acceptance criteria",
-          codePointers: "Related files",
-          skillSuggestions: "Recommended Skills",
-          matchedSignals: "Matched signals",
-          usageHint: "Usage hint",
-          localRuleNote: "Local rule note",
-          memorySuggestions: "Relevant memory",
-          executionPlan: "Execution Plan",
-          noExecutionPlan: "No execution plan was generated.",
-          agentGuardrail: "Agent Guardrail",
-          boundaryRequired: "Boundary required",
-          startWorkSegmentInput: "Start work segment input",
-          recordCurrentDiffInput: "Record current diff input",
-          finalResponseChecklist: "Final response checklist",
-          agentInstructions: "Agent instructions",
-          noPreparedTaskYet: "No prepared task context yet.",
-          noCodePointers: "No strong related file yet.",
-          noSkillSuggestions: "No Skill suggestion yet.",
-          noMemorySuggestions: "No relevant memory yet.",
-          matchedRequirement: "Matched Requirement",
-          noMatchedRequirement: "No existing requirement was matched. This task will be recorded as a new boundary.",
-          requirementMatchReason: "Match reason",
-          startWorkSegmentTool: "Start work segment",
-          recordDiffTool: "Record diff",
-          requirementDossier: "Requirement Dossier",
-          requirementDossierHint: "Repeated changes are grouped by requirement. Read the dossier before restoring one requirement.",
-          noRequirementDossier: "No requirement dossier yet.",
-          activeRequirement: "Active requirement",
-          requirementStatus: "Requirement status",
-          nextAction: "Next action",
-          keyFiles: "Key files",
-          latestSummary: "Latest summary",
-          reviewSessions: "Review sessions",
-          sessionsOmitted: "Omitted sessions",
-          timeline: "Requirement Timeline",
-          timelineSummary: "Timeline summary",
-          timelineEmpty: "No requirement memories yet.",
-          currentCount: "Current",
-          staleCount: "Stale",
-          revertedCount: "Reverted",
-          unknownCount: "Unknown",
-          languages: "Languages",
-          enabledTools: "Enabled Tools",
-          tools: "Capability Center",
-          filterAll: "All",
-          filterMcp: "MCP",
-          filterSkill: "Skill",
-          filterCli: "CLI",
-          noToolsForFilter: "No tools match this filter.",
-          advancedMcpMarketplace: "Advanced: MCP Marketplace Candidates",
-          marketplaceMcps: "Marketplace MCP Candidates",
-          marketplaceMcpNotice: "MCP is useful when a task needs external systems, browsers, databases, or remote services. It is optional, not the default path.",
-          marketplaceMcpKeywordPlaceholder: "Search MCP keyword, e.g. github, playwright, postgres",
-          searchMarketplaceMcp: "Search Marketplace MCPs",
-          searchingMarketplaceMcp: "Searching marketplace MCPs",
-          marketplaceMcpHiddenByFilter: "Marketplace MCP candidates are hidden while Skill is selected.",
-          noMarketplaceMcps: "No MCP search has been run yet.",
-          applyMarketplaceMcp: "Add and Enable",
-          applyingMarketplaceMcp: "Adding MCP",
-          marketplaceMcpApplied: "Marketplace MCP added and enabled",
-          envVars: "Env vars",
-          permissions: "Permissions",
-          installable: "Installable",
-          installable_yes: "Yes",
-          installable_no: "Manual config",
-          marketplaceSkills: "Marketplace Skill Candidates",
-          marketplaceNotice: "External Skills are shown as candidates only. SpecWeft will not apply them automatically or override local rules.",
-          marketplaceKeywordPlaceholder: "Search Skill keyword, e.g. java",
-          searchMarketplace: "Search Marketplace Skills",
-          searchingMarketplace: "Searching marketplace Skills",
-          marketplaceHiddenByFilter: "Marketplace Skill candidates are hidden while MCP is selected.",
-          noMarketplaceSkills: "No Skill search has been run yet.",
-          searchedKeywords: "Search keywords",
-          matchedKeyword: "Matched keyword",
-          conflictLevel: "Conflict risk",
-          conflict_none: "No obvious conflict",
-          conflict_low: "Low",
-          conflict_medium: "Medium",
-          conflict_high: "High",
-          marketplaceWarnings: "Search notes",
-          openGithub: "Open GitHub",
-          applyMarketplaceSkill: "Add and Enable",
-          applyingMarketplaceSkill: "Adding Skill",
-          marketplaceSkillApplied: "Marketplace Skill added and enabled",
-          viewSkillDetail: "Details",
-          previewSkillContent: "Preview Content",
-          loadingSkillDetail: "Loading Skill content",
-          skillDetail: "Skill Detail",
-          skillContent: "Skill Content",
-          contentSource: "Content source",
-          source: "Source",
-          stars: "Stars",
-          forks: "Forks",
-          refreshRecommendations: "Refresh Capabilities",
-          name: "Name",
-          type: "Type",
-          status: "Status",
-          risk: "Risk",
-          reason: "Reason",
-          action: "Action",
-          when: "When",
-          tool: "Tool",
-          actions: "Actions",
-          runtime: "Runtime",
-          buildAssembly: "Build Assembly",
-          review: "Review",
-          reviewTitlePlaceholder: "Review title",
-          createReview: "Create Review",
-          reviewDigest: "Review Digest",
-          requirementContext: "Requirement Context",
-          oneLineSummary: "One-line Summary",
-          whyChanged: "Why It Changed",
-          implementationPath: "Implementation Approach",
-          readingPath: "Reading Entry",
-          reviewNotes: "Notes",
-          validation: "Validation",
-          requirementSections: "Requirement Sections",
-          sectionWhy: "Why",
-          sectionImplementation: "Implementation",
-          sectionEntry: "Entry",
-          confidenceReasons: "Confidence Reasons",
-          advancedReviewDetails: "Advanced details",
-          reviewOverview: "Review Overview",
-          reviewOverviewBatches: "Review Batches",
-          reviewOverviewReadingOrder: "Overview Reading Order",
-          reviewBatchSourceGroups: "Source Groups",
-          implementationSummary: "Implementation Summary",
-          sourceReadingGuide: "Advanced Source Details",
-          reviewWalkthrough: "Suggested Reading Order",
-          risks: "Risks",
-          testSuggestions: "Test Suggestions",
-          changeGroups: "Change Groups",
-          groupMatchReason: "Grouping reason",
-          groupConfidence: "Grouping confidence",
-          requirementBlocks: "Requirement Blocks",
-          requirementBlockKind: "Block type",
-          requirementBlockEvidence: "Evidence",
-          requirementBlockAction: "Suggested action",
-          noRequirementBlocks: "No requirement blocks were detected.",
-          reviewFocus: "Review Focus",
-          groupTestSuggestions: "Verification Suggestions",
-          noChangeGroups: "No change groups were detected.",
-          memory: "Memory",
-          keywordPlaceholder: "Keyword",
-          recall: "Recall",
-          createHandoff: "Create Handoff",
-          refreshDigest: "Refresh Digest",
-          memoryDigest: "Memory Digest",
-          memoryDigestHint: "Read the digest first, then restore one relevant requirement.",
-          totalThreads: "Threads",
-          sessionCount: "Memories",
-          latestUpdatedAt: "Latest update",
-          restoreHint: "Restore hint",
-          handoff: "Thread Handoff",
-          handoffPrompt: "New Thread Prompt",
-          recoveredSessions: "Recovered Memories",
-          generatedAt: "Generated at",
-          handoffReady: "Handoff created",
-          connect: "Connect",
-          generateConfig: "Generate Config",
-          agentWorkflow: "Agent workflow",
-          codexConfig: "Codex Config Snippet",
-          claudeConfig: "Claude Config JSON",
-          workflowBootstrap: "Call specweft.bootstrap_session when a project opens to load profile and workflow.",
-          workflowPrepare: "Call specweft.prepare_task for each user task to clarify scope, locate files, and recommend Skills.",
-          workflowSegment: "Before editing, call specweft.start_work_segment to mark the local boundary for this request.",
-          workflowDigest: "For old work, read specweft.get_memory_digest and specweft.get_requirement_dossier first, then restore only the relevant requirement.",
-          workflowRecord: "After edits, call specweft.record_current_diff to save the explanation and memory.",
-          llmReviewConfig: "LLM Review Config",
-          llmEnabled: "Enabled",
-          llmDisabled: "Disabled",
-          memoryProtection: "Requirement Memory Protection",
-          keyConfigured: "Key status",
-          keyEnv: "Key env",
-          detected: "Detected",
-          encrypted: "Encrypted",
-          plaintext: "Plaintext",
-          missing: "Missing",
-          encryptedFiles: "Encrypted files",
-          plaintextFiles: "Plaintext files",
-          missingFiles: "Missing files",
-          noProtectionWarnings: "No protection warnings.",
-          memoryProtectionHint: "To encrypt requirement memory, set SPECWEFT_MEMORY_KEY and run specweft protect. Markdown reports stay plaintext for human review.",
-          model: "Model",
-          baseUrl: "Base URL",
-          maxDiffChars: "Max diff chars",
-          apiKeyEnv: "API key env",
-          notDetected: "Not detected",
-          llmConfigHint: "SpecWeft only checks whether env vars exist and never displays secrets. Set SPECWEFT_LLM_API_KEY to add an LLM summary on top of rule-based reviews. Remote calls time out after 15 seconds by default; change it with SPECWEFT_LLM_TIMEOUT_MS.",
-          idle: "Idle",
-          loading: "Loading",
-          ready: "Ready",
-          updating: "Updating",
-          creatingReview: "Creating review",
-          loadingMemory: "Loading memory",
-          error: "Error",
-          initializingPool: "Initializing pool",
-          selectionUpdated: "Selection updated",
-          poolInitialized: "Pool initialized",
-          reviewSaved: "Review saved",
-          requestFailed: "Request failed",
-          networkFailed: "Network request failed",
-          defaultReviewTitle: "SpecWeft UI review",
-          actionEnable: "Enable",
-          actionDisable: "Disable",
-          actionIgnore: "Ignore",
-          status_enabled: "Enabled",
-          status_recommended: "Recommended",
-          status_disabled: "Disabled",
-          status_ignored: "Ignored",
-          risk_low: "Low",
-          risk_medium: "Medium",
-          risk_high: "High",
-          type_mcp: "MCP",
-          type_skill: "Skill",
-          type_cli: "CLI",
-          type_hook: "Hook",
-          status_available: "Available",
-          noMcpServers: "No MCP servers are enabled for this project.",
-          noSkills: "No Skills are enabled for this project.",
-          mcpServers: "MCP Servers",
-          skills: "Skills",
-          command: "Command",
-          arguments: "Arguments",
-          path: "Path",
-          clientCommand: "Client command",
-          exposedTools: "Exposed tools",
-          serverName: "Server name",
-          transport: "Transport",
-          reportPath: "Report path",
-          memoryId: "Memory ID",
-          codeStatus: "Code status",
-          expiresAt: "Expires at",
-          summary: "Summary",
-          changedFiles: "Changed files",
-          keywords: "Keywords",
-          noChangedFiles: "No changed files were recorded.",
-          noKeywords: "No keywords.",
-          noSessions: "No matching memories found.",
-          noHandoffYet: "No thread handoff has been created yet.",
-          noReviewYet: "No review has been created yet.",
-          noSkillDetailYet: "Select a Skill to inspect its content.",
-          noRuntimeYet: "No runtime assembly yet.",
-          noConnectYet: "No connection config yet.",
-          noLlmConfigYet: "No LLM config status yet.",
-          noMemoryProtectionYet: "No memory protection status yet."
-        }
-      };
+  </div>
 
-      const state = {
-        repoPath: "",
-        projects: [],
-        requirements: { version: 1, requirements: [] },
-        dashboard: undefined,
-        marketplaceSkills: undefined,
-        marketplaceMcps: undefined,
-        locale: localStorage.getItem("specweft.locale") || "zh-CN",
-        toolFilter: localStorage.getItem("specweft.toolFilter") || "all"
-      };
+  <div class="modal-overlay" id="marketplaceModal">
+    <div class="modal" style="max-width:780px">
+      <div class="modal-header">
+        <div>
+          <h3>Skills 市场</h3>
+          <p>从社区和官方发布中找到适合你项目的 Skill</p>
+        </div>
+        <button class="close-btn" data-action="close-modal" data-modal="marketplaceModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="search-bar" style="margin-bottom:20px">
+          <input id="skillMarketplaceSearch" type="text" placeholder="搜索 Skills…" />
+        </div>
+        <div class="inline-row" style="margin-bottom:20px">
+          <button class="btn btn-secondary" data-market-keyword="">全部</button>
+          <button class="btn btn-secondary" data-market-keyword="review">代码质量</button>
+          <button class="btn btn-secondary" data-market-keyword="test">测试</button>
+          <button class="btn btn-secondary" data-market-keyword="doc">文档</button>
+          <button class="btn btn-secondary" data-market-keyword="security">安全</button>
+        </div>
+        <div id="skillMarketplaceList" class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-modal" data-modal="marketplaceModal">关闭</button>
+      </div>
+    </div>
+  </div>
 
-      const repoInput = document.getElementById("repoInput");
-      const projectSelect = document.getElementById("projectSelect");
-      const requirementSelect = document.getElementById("requirementSelect");
-      const requirementTitleInput = document.getElementById("requirementTitleInput");
-      const statusLine = document.getElementById("statusLine");
-      const toast = document.getElementById("toast");
-      const languageSelect = document.getElementById("languageSelect");
-      const toolFilterSelect = document.getElementById("toolFilterSelect");
+  <div class="modal-overlay" id="mcpMarketplaceModal">
+    <div class="modal" style="max-width:780px">
+      <div class="modal-header">
+        <div>
+          <h3>MCP 市场</h3>
+          <p>MCP 不是必须安装项，只在项目真正需要外部能力时推荐</p>
+        </div>
+        <button class="close-btn" data-action="close-modal" data-modal="mcpMarketplaceModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="search-bar" style="margin-bottom:20px">
+          <input id="mcpMarketplaceSearch" type="text" placeholder="搜索 MCP…" />
+        </div>
+        <div class="inline-row" style="margin-bottom:20px">
+          <button class="btn btn-secondary" data-mcp-keyword="">全部</button>
+          <button class="btn btn-secondary" data-mcp-keyword="filesystem">文件系统</button>
+          <button class="btn btn-secondary" data-mcp-keyword="database">数据库</button>
+          <button class="btn btn-secondary" data-mcp-keyword="github">代码托管</button>
+          <button class="btn btn-secondary" data-mcp-keyword="search">搜索</button>
+        </div>
+        <div id="mcpMarketplaceList" class="list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-modal" data-modal="mcpMarketplaceModal">关闭</button>
+      </div>
+    </div>
+  </div>
 
-      function t(key) {
-        return messages[state.locale][key] || messages["zh-CN"][key] || key;
-      }
+  <div class="modal-overlay" id="detailModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div>
+          <h3 id="detailTitle">详情</h3>
+          <p id="detailMeta"></p>
+        </div>
+        <button class="close-btn" data-action="close-modal" data-modal="detailModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="detailBody" class="readable"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-modal" data-modal="detailModal">关闭</button>
+      </div>
+    </div>
+  </div>
 
-      function applyLocale() {
-        document.documentElement.lang = state.locale;
-        document.querySelectorAll("[data-i18n]").forEach((node) => {
-          node.textContent = t(node.dataset.i18n);
+  <div class="modal-overlay" id="reviewModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <div>
+          <h3 id="reviewTitle">代码讲解</h3>
+          <p id="reviewMeta"></p>
+        </div>
+        <button class="close-btn" data-action="close-modal" data-modal="reviewModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="reviewBody" class="readable"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-action="close-modal" data-modal="reviewModal">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    var INITIAL_REPO = ${JSON.stringify(repoPath)};
+    var state = {
+      repoPath: INITIAL_REPO,
+      activeView: "skills",
+      projects: null,
+      dashboard: null,
+      settings: null,
+      skillMarket: null,
+      mcpMarket: null,
+      historyFilter: "all"
+    };
+
+    var viewTitles = {
+      overview: "概览",
+      skills: "Skills 管理",
+      mcp: "MCP 服务",
+      config: "项目配置",
+      history: "修改历史",
+      threads: "需求线程"
+    };
+
+    init();
+
+    async function init() {
+      bindEvents();
+      switchView((location.hash || "#skills").slice(1) || "skills");
+      await loadProjectShell();
+      await loadDashboard();
+      await loadSkillMarketplace("");
+      await loadMcpMarketplace("");
+    }
+
+    function bindEvents() {
+      document.querySelectorAll(".nav-item").forEach(function(link) {
+        link.addEventListener("click", function(event) {
+          event.preventDefault();
+          switchView(link.dataset.viewTarget || "skills");
         });
-        document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
-          node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder));
-        });
-        languageSelect.value = state.locale;
-        toolFilterSelect.value = state.toolFilter;
-        renderProjectOptions();
-        renderRequirementOptions();
-        const statusKey = statusLine.dataset.statusKey || "idle";
-        statusLine.textContent = t(statusKey);
-        if (state.dashboard) {
-          renderDashboard(state.dashboard);
-        } else {
-          renderEmptyOutputs();
-        }
-      }
-
-      function setStatus(key) {
-        statusLine.dataset.statusKey = key;
-        statusLine.textContent = t(key);
-      }
-
-      function showToast(text) {
-        toast.textContent = text;
-        toast.classList.add("show");
-        window.clearTimeout(showToast.timer);
-        showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 2600);
-      }
-
-      async function api(path, options = {}) {
-        const headers = { "content-type": "application/json", ...(options.headers || {}) };
-        let response;
-        try {
-          response = await fetch(path, { ...options, headers });
-        } catch (error) {
-          throw new Error((error && error.message) || t("networkFailed"));
-        }
-
-        const text = await response.text();
-        let value = {};
-        if (text) {
-          try {
-            value = JSON.parse(text);
-          } catch {
-            value = { error: text.slice(0, 240) };
-          }
-        }
-        if (!response.ok) {
-          throw new Error(value.error || response.statusText || t("requestFailed"));
-        }
-        return value;
-      }
-
-      async function loadDashboard() {
-        setStatus("loading");
-        const repo = encodeURIComponent(repoInput.value.trim());
-        const data = await api("/api/dashboard?repo=" + repo);
-        state.repoPath = data.profile.rootPath;
-        state.dashboard = data;
-        state.requirements = data.requirements || { version: 1, requirements: [] };
-        repoInput.value = state.repoPath;
-        await loadProjects(state.repoPath);
-        renderDashboard(data);
-        setStatus("ready");
-      }
-
-      async function loadProjects(activePath = repoInput.value.trim()) {
-        const registry = await api("/api/projects");
-        state.projects = registry.projects || [];
-        renderProjectOptions(activePath || registry.activeProjectPath || "");
-      }
-
-      function renderProjectOptions(activePath = repoInput.value.trim()) {
-        const projects = state.projects || [];
-        projectSelect.innerHTML = [
-          "<option value=''>" + escapeHtml(t("projectSelectorPlaceholder")) + "</option>",
-          ...projects.map((project) => {
-            const label = project.name + " - " + project.rootPath;
-            return "<option value='" + escapeHtml(project.rootPath) + "'>" + escapeHtml(label) + "</option>";
-          })
-        ].join("");
-        projectSelect.value = projects.some((project) => project.rootPath === activePath) ? activePath : "";
-      }
-
-      function renderRequirementOptions() {
-        const file = state.requirements || { requirements: [] };
-        const requirements = file.requirements || [];
-        requirementSelect.innerHTML = [
-          "<option value=''>" + escapeHtml(t("requirementSelectorPlaceholder")) + "</option>",
-          ...requirements.map((requirement) => {
-            const label = requirement.title + " · " + t("reviewCount") + ": " + requirement.reviewCount;
-            return "<option value='" + escapeHtml(requirement.id) + "'>" + escapeHtml(label) + "</option>";
-          })
-        ].join("");
-        requirementSelect.value = file.activeRequirementId || "";
-      }
-
-      function activeRequirementId() {
-        return requirementSelect.value || state.requirements?.activeRequirementId || "";
-      }
-
-      function renderDashboard(data) {
-        document.getElementById("projectName").textContent = data.profile.name;
-        document.getElementById("languages").textContent = data.profile.languages.join(", ") || "-";
-        const enabled = data.capabilityCenter?.summary?.enabled
-          ?? data.recommendations.filter((item) => item.status === "enabled").length;
-        document.getElementById("enabledCount").textContent = String(enabled);
-        renderCapabilities(data.capabilityCenter?.capabilities || data.recommendations);
-        renderMarketplaceMcps(state.marketplaceMcps);
-        renderMarketplaceSkills(state.marketplaceSkills);
-        renderRequirementOptions();
-        renderAssembly(data.assembly);
-        renderConnect(data.mcpInspect);
-        renderLlmConfig(data.llmConfig);
-        renderMemoryProtection(data.memoryProtection);
-        renderRecordingStatus(data.recordingStatus);
-        renderWorkSegments(data.workSegments);
-        renderRequirementDossier(data.requirementDossier);
-        renderMemoryDigest(data.memoryDigest);
-        renderTimeline(data.timeline);
-      }
-
-      function renderEmptyOutputs() {
-        document.getElementById("recordingStatusOutput").innerHTML = "";
-        document.getElementById("workSegmentOutput").innerHTML = emptyState(t("noWorkSegments"));
-        document.getElementById("workSegmentMemoryOutput").innerHTML = emptyState(t("noWorkSegments"));
-        document.getElementById("preparedTaskOutput").innerHTML = emptyState(t("noPreparedTaskYet"));
-        document.getElementById("assemblyOutput").innerHTML = emptyState(t("noRuntimeYet"));
-        document.getElementById("connectOutput").innerHTML = emptyState(t("noConnectYet"));
-        document.getElementById("llmConfigOutput").innerHTML = emptyState(t("noLlmConfigYet"));
-        document.getElementById("memoryProtectionOutput").innerHTML = emptyState(t("noMemoryProtectionYet"));
-        document.getElementById("reviewOutput").innerHTML = emptyState(t("noReviewYet"));
-        document.getElementById("requirementDossierOutput").innerHTML = emptyState(t("noRequirementDossier"));
-        document.getElementById("memoryDigestOutput").innerHTML = emptyState(t("timelineEmpty"));
-        document.getElementById("timelineOutput").innerHTML = emptyState(t("timelineEmpty"));
-        document.getElementById("recallOutput").innerHTML = emptyState(t("noSessions"));
-        document.getElementById("handoffOutput").innerHTML = emptyState(t("noHandoffYet"));
-        document.getElementById("skillDetailOutput").innerHTML = emptyState(t("noSkillDetailYet"));
-        document.getElementById("marketplaceMcps").innerHTML = emptyState(t("noMarketplaceMcps"));
-        document.getElementById("marketplaceSkills").innerHTML = emptyState(t("noMarketplaceSkills"));
-      }
-
-      function renderPreparedTask(data) {
-        const requirement = data.requirement || {};
-        const analysis = data.taskAnalysis || {};
-        document.getElementById("preparedTaskOutput").innerHTML = [
-          sectionCard(t("preparedTask"), detailGrid([
-            [t("project"), data.projectName || "-"],
-            [t("generatedAt"), data.generatedAt || "-"],
-            [t("clarifiedGoal"), requirement.clarifiedGoal || "-"]
-          ])),
-          sectionCard(t("taskAnalysis"), [
-            "<p>" + escapeHtml(analysis.summary || "-") + "</p>",
-            detailGrid([
-              [t("intent"), analysis.intent || "-"],
-              [t("ambiguity"), analysis.ambiguity || "-"],
-              [t("confidence"), analysis.confidence || "-"],
-              [t("routingReason"), analysis.routingReason || "-"],
-              [t("suggestedSearches"), analysis.suggestedSearches?.length ? analysis.suggestedSearches.join(", ") : "-"]
-            ])
-          ].join("")),
-          sectionCard(t("missingQuestions"), listHtml(requirement.missingQuestions?.length ? requirement.missingQuestions : ["-"])),
-          sectionCard(t("acceptanceCriteria"), listHtml(requirement.acceptanceCriteria?.length ? requirement.acceptanceCriteria : ["-"])),
-          sectionCard(t("codePointers"), data.codePointers?.length
-            ? data.codePointers.map((item) => detailCard(item.path, [
-                [t("reason"), item.reason || "-"],
-                [t("status"), item.confidence || "-"],
-                [t("matchSource"), item.matchSource || "-"],
-                [t("fileRole"), item.fileRole || "-"],
-                [t("matchedSignals"), item.matchedSignals?.length ? item.matchedSignals.join(", ") : "-"]
-              ])).join("")
-            : emptyState(t("noCodePointers"))),
-          sectionCard(t("skillSuggestions"), data.skillSuggestions?.length
-            ? data.skillSuggestions.map((item) => detailCard(item.name, [
-                [t("memoryId"), item.id],
-                [t("status"), item.status || "-"],
-                [t("risk"), item.conflictRisk || "-"],
-                [t("reason"), item.reason || "-"],
-                [t("matchedSignals"), item.matchedSignals?.length ? item.matchedSignals.join(", ") : "-"],
-                [t("usageHint"), item.usageHint || "-"],
-                [t("localRuleNote"), item.localRuleNote || "-"]
-              ])).join("")
-            : emptyState(t("noSkillSuggestions"))),
-          sectionCard(t("memorySuggestions"), data.memorySuggestions?.length
-            ? data.memorySuggestions.map((item) => detailCard(item.title, [
-                [t("memoryId"), item.memoryId],
-                [t("currentRequirement"), item.requirementId || "-"],
-                [t("reason"), item.reason || "-"],
-                [t("command"), item.restoreTool || "-"]
-              ])).join("")
-            : emptyState(t("noMemorySuggestions"))),
-          sectionCard(t("matchedRequirement"), renderMatchedRequirement(data.matchedRequirement)),
-          sectionCard(t("agentGuardrail"), renderTaskGuardrail(data.guardrail || {})),
-          sectionCard(t("executionPlan"), renderExecutionPlan(data.executionPlan || [])),
-          sectionCard(t("agentInstructions"), "<div class='prompt-box'>" + escapeHtml(data.agentInstructions || "-") + "</div>")
-        ].join("");
-      }
-
-      function renderTaskGuardrail(guardrail) {
-        return [
-          detailGrid([
-            [t("boundaryRequired"), guardrail.boundaryRequired ? "yes" : "no"],
-            [t("currentRequirement"), guardrail.requirementTitle || guardrail.requirementId || "-"]
-          ]),
-          "<h3>" + escapeHtml(t("startWorkSegmentInput")) + "</h3>",
-          "<div class='codebox'>" + escapeHtml(JSON.stringify(guardrail.startWorkSegmentInput || {}, null, 2)) + "</div>",
-          "<h3>" + escapeHtml(t("recordCurrentDiffInput")) + "</h3>",
-          "<div class='codebox'>" + escapeHtml(JSON.stringify(guardrail.recordCurrentDiffInput || {}, null, 2)) + "</div>",
-          "<h3>" + escapeHtml(t("finalResponseChecklist")) + "</h3>",
-          listHtml(guardrail.finalResponseChecklist?.length ? guardrail.finalResponseChecklist : ["-"])
-        ].join("");
-      }
-
-      function renderExecutionPlan(steps) {
-        if (!steps.length) {
-          return emptyState(t("noExecutionPlan"));
-        }
-
-        return steps.map((step) => [
-          "<div class='memory-item'>",
-          "<h3>" + escapeHtml(step.order + ". " + (step.title || "-")) + "</h3>",
-          detailGrid([
-            [t("action"), step.action || "-"],
-            [t("reason"), step.reason || "-"],
-            [t("when"), step.when || "-"],
-            [t("tool"), step.tool || "-"]
-          ]),
-          "</div>"
-        ].join("")).join("");
-      }
-
-      function renderMatchedRequirement(requirement) {
-        if (!requirement) {
-          return emptyState(t("noMatchedRequirement"));
-        }
-
-        return detailCard(requirement.title || "-", [
-          [t("currentRequirement"), requirement.requirementId || "-"],
-          [t("status"), requirement.status || "-"],
-          [t("reviewCount"), String(requirement.reviewCount || 0)],
-          [t("requirementMatchReason"), requirement.reason || "-"],
-          [t("keywords"), requirement.keywords?.length ? requirement.keywords.join(", ") : "-"],
-          [t("startWorkSegmentTool"), requirement.startWorkSegmentTool || "-"],
-          [t("recordDiffTool"), requirement.recordDiffTool || "-"]
-        ]);
-      }
-
-      function renderAssembly(assembly) {
-        const servers = Object.entries(assembly.mcpServers || {});
-        const skills = assembly.skills || [];
-        document.getElementById("assemblyOutput").innerHTML = [
-          sectionCard(t("mcpServers"), servers.length
-            ? servers.map(([id, server]) => detailCard(id, [
-                [t("command"), server.command],
-                [t("arguments"), (server.args || []).join(" ")]
-              ])).join("")
-            : emptyState(t("noMcpServers"))),
-          sectionCard(t("skills"), skills.length
-            ? skills.map((skill) => detailCard(skill.id, [[t("path"), skill.path]])).join("")
-            : emptyState(t("noSkills")))
-        ].join("");
-      }
-
-      function renderConnect(config) {
-        const spec = config.clientConfig?.mcpServers?.specweft;
-        const command = spec ? [spec.command, ...(spec.args || [])].join(" ") : "-";
-        document.getElementById("connectOutput").innerHTML = [
-          sectionCard(t("clientCommand"), "<div class='codebox'>" + escapeHtml(command) + "</div>"),
-          sectionCard(t("codexConfig"), "<div class='codebox'>" + escapeHtml(config.codexToml || "-") + "</div>"),
-          sectionCard(t("claudeConfig"), "<div class='codebox'>" + escapeHtml(config.claudeJson || JSON.stringify(config.clientConfig || {}, null, 2)) + "</div>"),
-          sectionCard(t("summary"), detailGrid([
-            [t("serverName"), config.server],
-            [t("transport"), config.transport]
-          ])),
-          sectionCard(t("agentWorkflow"), listHtml(config.workflow?.length ? config.workflow : [
-            t("workflowBootstrap"),
-            t("workflowPrepare"),
-            t("workflowSegment"),
-            t("workflowDigest"),
-            t("workflowRecord")
-          ])),
-          sectionCard(t("exposedTools"), listHtml(config.tools || []))
-        ].join("");
-      }
-
-      function renderLlmConfig(config) {
-        const status = config?.enabled ? t("llmEnabled") : t("llmDisabled");
-        document.getElementById("llmConfigOutput").innerHTML = sectionCard(t("llmReviewConfig"), [
-          detailGrid([
-            [t("status"), status],
-            [t("model"), config?.model || "-"],
-            [t("baseUrl"), config?.baseUrl || "-"],
-            [t("maxDiffChars"), String(config?.maxDiffChars || "-")],
-            [t("apiKeyEnv"), config?.env?.apiKey || t("notDetected")]
-          ]),
-          "<p>" + escapeHtml(t("llmConfigHint")) + "</p>"
-        ].join(""));
-      }
-
-      function renderMemoryProtection(protection) {
-        if (!protection) {
-          document.getElementById("memoryProtectionOutput").innerHTML = emptyState(t("noMemoryProtectionYet"));
-          return;
-        }
-
-        const fileRows = (protection.files || []).map((file) => [
-          escapeHtml(file.label || file.id || "-"),
-          escapeHtml(file.encrypted ? t("encrypted") : file.exists ? t("plaintext") : t("missing")),
-          escapeHtml(file.path || "-")
-        ]);
-        const warnings = protection.warnings?.length
-          ? listHtml(protection.warnings)
-          : "<p>" + escapeHtml(t("noProtectionWarnings")) + "</p>";
-        document.getElementById("memoryProtectionOutput").innerHTML = sectionCard(t("memoryProtection"), [
-          detailGrid([
-            [t("status"), protection.summary || "-"],
-            [t("keyConfigured"), protection.keyConfigured ? t("detected") : t("notDetected")],
-            [t("keyEnv"), protection.keyEnv || "SPECWEFT_MEMORY_KEY"],
-            [t("encryptedFiles"), String(protection.protectedFiles || 0)],
-            [t("plaintextFiles"), String(protection.plaintextFiles || 0)],
-            [t("missingFiles"), String(protection.missingFiles || 0)]
-          ]),
-          "<div class='mini-table'>" + fileRows.map((row) =>
-            "<div>" + row.map((cell) => "<span>" + cell + "</span>").join("") + "</div>"
-          ).join("") + "</div>",
-          warnings,
-          "<p>" + escapeHtml(t("memoryProtectionHint")) + "</p>"
-        ].join(""));
-      }
-
-      function renderRecordingStatus(status) {
-        if (!status) {
-          document.getElementById("recordingStatusOutput").innerHTML = "";
-          return;
-        }
-
-        const title = statusTitle(status.status);
-        const action = status.hasChanges && !status.isRecorded
-          ? "<button id='recordCurrentDiffButton' class='btn primary'>" + escapeHtml(t("recordCurrentDiff")) + "</button>"
-          : "";
-        document.getElementById("recordingStatusOutput").innerHTML = sectionCard(t("recordingStatus"), [
-          detailGrid([
-            [t("status"), title],
-            [t("summary"), status.reason || "-"],
-            [t("changedFiles"), status.currentSnapshot?.changedFiles?.length ? status.currentSnapshot.changedFiles.join(", ") : "-"]
-          ]),
-          action ? "<div class='actions'>" + action + "</div>" : ""
-        ].join(""));
-      }
-
-      function renderWorkSegments(report) {
-        const overview = document.getElementById("workSegmentOutput");
-        const memory = document.getElementById("workSegmentMemoryOutput");
-        if (!report) {
-          overview.innerHTML = emptyState(t("noWorkSegments"));
-          memory.innerHTML = emptyState(t("noWorkSegments"));
-          return;
-        }
-
-        const active = report.activeSegment;
-        const recent = report.recentSegments || [];
-        overview.innerHTML = sectionCard(t("workSegments"), [
-          active ? renderWorkSegmentCard(active, true) : emptyState(t("noWorkSegments")),
-          report.guidance?.length ? "<h3>" + escapeHtml(t("nextAction")) + "</h3>" + listHtml(report.guidance) : ""
-        ].join(""));
-
-        memory.innerHTML = sectionCard(t("recentWorkSegments"), recent.length
-          ? "<div class='memory-stack'>" + recent.map((segment) => renderWorkSegmentCard(segment, false)).join("") + "</div>"
-          : emptyState(t("noWorkSegments")));
-      }
-
-      function renderWorkSegmentCard(segment, compact) {
-        const title = compact ? t("activeWorkSegment") + ": " + (segment.title || "-") : segment.title || "-";
-        return [
-          "<div class='memory-item'>",
-          "<h3>" + escapeHtml(title) + "</h3>",
-          "<p>" + escapeHtml(segment.summary || segment.task || "-") + "</p>",
-          detailGrid([
-            [t("status"), t("segmentStatus_" + segment.status)],
-            [t("currentRequirement"), segment.requirementTitle || segment.requirementId || "-"],
-            [t("baselineChangedFiles"), segment.baselineChangedFiles?.length ? segment.baselineChangedFiles.join(", ") : "-"],
-            [t("newChangedFiles"), segment.newChangedFiles?.length ? segment.newChangedFiles.join(", ") : "-"],
-            [t("carriedChangedFiles"), segment.carriedChangedFiles?.length ? segment.carriedChangedFiles.join(", ") : "-"],
-            [t("reportPath"), segment.reviewPath || "-"],
-            [t("memoryId"), segment.memoryId || "-"],
-            [t("latestUpdatedAt"), segment.updatedAt || "-"]
-          ]),
-          "</div>"
-        ].join("");
-      }
-
-      function renderTimeline(timeline) {
-        const container = document.getElementById("timelineOutput");
-        if (!timeline) {
-          container.innerHTML = emptyState(t("timelineEmpty"));
-          return;
-        }
-
-        const items = timeline.items || [];
-        const summary = timeline.summary || {};
-        const summaryCard = sectionCard(t("timelineSummary"), detailGrid([
-          [t("currentRequirement"), timeline.activeRequirementId || "-"],
-          [t("reviewCount"), String(summary.sessions || 0)],
-          [t("currentCount"), String(summary.current || 0)],
-          [t("staleCount"), String(summary.stale || 0)],
-          [t("revertedCount"), String(summary.reverted || 0)],
-          [t("unknownCount"), String(summary.unknown || 0)]
-        ]));
-
-        if (items.length === 0 && !(timeline.unscopedSessions || []).length) {
-          container.innerHTML = summaryCard + emptyState(t("timelineEmpty"));
-          return;
-        }
-
-        const requirementCards = items.map((item) => {
-          const requirement = item.requirement || {};
-          const sessions = item.sessions || [];
-          return sectionCard(requirement.title || "-", [
-            detailGrid([
-              [t("memoryId"), requirement.id || "-"],
-              [t("reviewCount"), String(requirement.reviewCount || sessions.length || 0)],
-              [t("currentCount"), String(item.statusCounts?.current || 0)],
-              [t("staleCount"), String(item.statusCounts?.stale || 0)],
-              [t("revertedCount"), String(item.statusCounts?.reverted || 0)],
-              [t("unknownCount"), String(item.statusCounts?.unknown || 0)]
-            ]),
-            sessions.length
-              ? "<div class='memory-stack'>" + sessions.map(renderTimelineSession).join("") + "</div>"
-              : emptyState(t("noSessions"))
-          ].join(""));
-        }).join("");
-
-        const unscoped = timeline.unscopedSessions?.length
-          ? sectionCard(t("recoveredSessions"), "<div class='memory-stack'>" + timeline.unscopedSessions.map(renderTimelineSession).join("") + "</div>")
-          : "";
-
-        container.innerHTML = summaryCard + requirementCards + unscoped;
-      }
-
-      function renderMemoryDigest(digest) {
-        const container = document.getElementById("memoryDigestOutput");
-        if (!digest) {
-          container.innerHTML = emptyState(t("timelineEmpty"));
-          return;
-        }
-
-        const items = digest.items || [];
-        const summaryCard = sectionCard(t("memoryDigest"), [
-          "<p>" + escapeHtml(digest.summary || t("memoryDigestHint")) + "</p>",
-          detailGrid([
-            [t("reviewCount"), String(digest.totalMemories || 0)],
-            [t("totalThreads"), String(digest.totalThreads || 0)],
-            [t("generatedAt"), digest.generatedAt || "-"]
-          ])
-        ].join(""));
-
-        if (items.length === 0) {
-          container.innerHTML = summaryCard + emptyState(t("timelineEmpty"));
-          return;
-        }
-
-        const cards = items.map((item) => sectionCard(item.title || "-", [
-          "<p>" + escapeHtml(item.latestSummary || "-") + "</p>",
-          detailGrid([
-            [t("currentRequirement"), item.requirementTitle || item.requirementId || "-"],
-            [t("sessionCount"), String(item.sessionCount || 0)],
-            [t("currentCount"), String(item.statusCounts?.current || 0)],
-            [t("staleCount"), String(item.statusCounts?.stale || 0)],
-            [t("revertedCount"), String(item.statusCounts?.reverted || 0)],
-            [t("unknownCount"), String(item.statusCounts?.unknown || 0)],
-            [t("latestUpdatedAt"), item.latestUpdatedAt || "-"],
-            [t("restoreHint"), item.restoreHint || "-"]
-          ]),
-          "<h3>" + escapeHtml(t("keywords")) + "</h3>",
-          listHtml(item.keywords?.length ? item.keywords : [t("noKeywords")]),
-          "<h3>" + escapeHtml(t("changedFiles")) + "</h3>",
-          listHtml(item.keyFiles?.length ? item.keyFiles : [t("noChangedFiles")])
-        ].join(""))).join("");
-
-        container.innerHTML = summaryCard + cards;
-      }
-
-      function renderRequirementDossier(dossier) {
-        const container = document.getElementById("requirementDossierOutput");
-        if (!dossier) {
-          container.innerHTML = emptyState(t("noRequirementDossier"));
-          return;
-        }
-
-        const items = dossier.items || [];
-        const summaryCard = sectionCard(t("requirementDossier"), [
-          "<p>" + escapeHtml(dossier.summary || t("requirementDossierHint")) + "</p>",
-          detailGrid([
-            [t("project"), dossier.projectName || "-"],
-            [t("currentRequirement"), dossier.activeRequirementId || "-"],
-            [t("reviewCount"), String(dossier.totalSessions || 0)],
-            [t("generatedAt"), dossier.generatedAt || "-"]
-          ])
-        ].join(""));
-
-        if (items.length === 0) {
-          container.innerHTML = summaryCard + emptyState(t("noRequirementDossier"));
-          return;
-        }
-
-        const cards = items.map(renderRequirementDossierItem).join("");
-        container.innerHTML = summaryCard + "<div class='memory-stack'>" + cards + "</div>";
-      }
-
-      function renderRequirementDossierItem(item) {
-        const sessions = item.sessions || [];
-        const active = item.active ? " active" : "";
-        return [
-          "<div class='dossier-card" + active + "'>",
-          "<div class='dossier-heading'>",
-          "<h3>" + escapeHtml(item.title || "-") + "</h3>",
-          item.active ? "<span class='status-pill current'>" + escapeHtml(t("activeRequirement")) + "</span>" : "",
-          "</div>",
-          "<p>" + escapeHtml(item.summary || "-") + "</p>",
-          detailGrid([
-            [t("currentRequirement"), item.requirementId || item.id || "-"],
-            [t("requirementStatus"), item.status || "-"],
-            [t("sessionCount"), String(item.sessionCount || 0)],
-          [t("currentCount"), String(item.statusCounts?.current || 0)],
-          [t("staleCount"), String(item.statusCounts?.stale || 0)],
-          [t("revertedCount"), String(item.statusCounts?.reverted || 0)],
-          [t("unknownCount"), String(item.statusCounts?.unknown || 0)],
-          [t("sessionsOmitted"), String(item.sessionsOmitted || 0)],
-          [t("latestUpdatedAt"), item.latestUpdatedAt || "-"],
-          [t("restoreHint"), item.restoreHint || "-"],
-          [t("nextAction"), item.nextAction || "-"]
-          ]),
-          "<h3>" + escapeHtml(t("keywords")) + "</h3>",
-          listHtml(item.keywords?.length ? item.keywords : [t("noKeywords")]),
-          "<h3>" + escapeHtml(t("keyFiles")) + "</h3>",
-          listHtml(item.keyFiles?.length ? item.keyFiles : [t("noChangedFiles")]),
-          "<h3>" + escapeHtml(t("reviewSessions")) + "</h3>",
-          sessions.length
-            ? sessions.map(renderDossierSession).join("")
-            : emptyState((item.sessionsOmitted || 0) > 0
-              ? t("sessionsOmitted") + ": " + String(item.sessionsOmitted)
-              : t("noSessions")),
-          "</div>"
-        ].join("");
-      }
-
-      function renderDossierSession(session) {
-        return [
-          "<div class='dossier-session'>",
-          "<h3>" + escapeHtml(session.title || "-") + "</h3>",
-          "<p>" + escapeHtml(session.summary || "-") + "</p>",
-          detailGrid([
-            [t("codeStatus"), formatCodeStatus(session)],
-            [t("reportPath"), session.reviewPath || "-"],
-            [t("changedFiles"), session.changedFiles?.length ? session.changedFiles.join(", ") : "-"],
-            [t("latestUpdatedAt"), session.updatedAt || "-"],
-            [t("expiresAt"), session.expiresAt || "-"]
-          ]),
-          "</div>"
-        ].join("");
-      }
-
-      function renderTimelineSession(session) {
-        return [
-          "<div class='memory-item'>",
-          "<h3>" + escapeHtml(session.title || "-") + "</h3>",
-          "<p>" + escapeHtml(session.summary || "-") + "</p>",
-          detailGrid([
-            [t("codeStatus"), formatCodeStatus(session)],
-            [t("reportPath"), session.reviewPath || "-"],
-            [t("changedFiles"), session.changedFiles?.length ? session.changedFiles.join(", ") : "-"],
-            [t("expiresAt"), session.expiresAt || "-"]
-          ]),
-          "</div>"
-        ].join("");
-      }
-
-      function renderReview(data) {
-        document.getElementById("reviewOutput").innerHTML = [
-          renderReviewDigest(data.review?.reviewDigest || {}, data.review?.summary || data.memory?.summary || "-"),
-          sectionCard(data.title, detailGrid([
-            [t("currentRequirement"), data.requirement?.title || "-"],
-            [t("reportPath"), data.reportPath],
-            [t("memoryId"), data.memory?.id || "-"],
-            [t("codeStatus"), formatCodeStatus(data.memory)],
-            [t("expiresAt"), data.memory?.expiresAt || "-"]
-          ])),
-          "<details class='advanced-section'>",
-          "<summary>" + escapeHtml(t("advancedReviewDetails")) + "</summary>",
-          sectionCard(t("summary"), "<p>" + escapeHtml(data.review?.summary || data.memory?.summary || "-") + "</p>"),
-          sectionCard(t("reviewOverview"), renderReviewOverview(data.review || {})),
-          sectionCard(t("requirementBlocks"), renderReviewRequirementBlocks(data.review?.requirementBlocks || [])),
-          sectionCard(t("changeGroups"), renderReviewChangeGroups(data.review?.changeGroups || [])),
-          sectionCard(t("review"), "<div class='review-report'>" + (data.html || "") + "</div>"),
-          "</details>"
-        ].join("");
-      }
-
-      function renderReviewDigest(digest, fallbackSummary) {
-        const reading = digest.readingPath || [];
-        return [
-          "<article class='result-card review-digest-card'>",
-          "<div class='review-digest-heading'>",
-          "<h2>" + escapeHtml(digest.title || t("reviewDigest")) + "</h2>",
-          "<p><strong>" + escapeHtml(t("requirementContext")) + "：</strong>" + escapeHtml(digest.requirementContext || "-") + "</p>",
-          "<p><strong>" + escapeHtml(t("oneLineSummary")) + "：</strong>" + escapeHtml(digest.oneLineSummary || fallbackSummary || "-") + "</p>",
-          "</div>",
-          renderReviewSections(digest.sections || []),
-          "<div class='review-digest-grid'>",
-          reviewDigestBlock(t("whyChanged"), digest.whyChanged || []),
-          reviewDigestBlock(t("implementationPath"), digest.implementationPath || []),
-          reviewReadingBlock(t("readingPath"), reading),
-          reviewDigestBlock(t("reviewNotes"), digest.reviewNotes || []),
-          reviewDigestBlock(t("validation"), digest.validation || []),
-          reviewDigestBlock(t("confidence"), [
-            formatGroupConfidence(digest.confidence),
-            ...(digest.confidenceReasons || [])
-          ]),
-          "</div>",
-          "</article>"
-        ].join("");
-      }
-
-      function renderReviewSections(sections) {
-        if (!sections.length) {
-          return "";
-        }
-
-        return [
-          "<div class='review-section-list'>",
-          "<h3>" + escapeHtml(t("requirementSections")) + "</h3>",
-          sections.map((section, index) => [
-            "<article class='review-section-item'>",
-            "<h3>" + escapeHtml(String(index + 1) + ". " + (section.title || "-")) + "</h3>",
-            "<p>" + escapeHtml(section.summary || "-") + "</p>",
-            detailGrid([
-              [t("requirementBlockKind"), formatRequirementBlockKind(section.kind)],
-              [t("sectionWhy"), section.whyChanged || "-"],
-              [t("sectionImplementation"), section.implementation || "-"],
-              [t("sectionEntry"), section.readingEntry?.path || "-"],
-              [t("validation"), section.validation || "-"],
-              [t("confidence"), formatGroupConfidence(section.confidence)]
-            ]),
-            "</article>"
-          ].join("")).join(""),
-          "</div>"
-        ].join("");
-      }
-
-      function reviewDigestBlock(title, items) {
-        return [
-          "<div class='review-digest-block'>",
-          "<h3>" + escapeHtml(title) + "</h3>",
-          listHtml(items.length ? items : ["-"]),
-          "</div>"
-        ].join("");
-      }
-
-      function reviewReadingBlock(title, items) {
-        if (!items.length) {
-          return reviewDigestBlock(title, ["-"]);
-        }
-
-        return [
-          "<div class='review-digest-block'>",
-          "<h3>" + escapeHtml(title) + "</h3>",
-          "<ol class='review-reading-list'>",
-          items.map((item) => [
-            "<li>",
-            "<strong>" + escapeHtml(item.title ? item.title + "：" + (item.path || "-") : item.path || "-") + "</strong>",
-            "<span>" + escapeHtml(item.reason || "-") + "</span>",
-            "</li>"
-          ].join("")).join(""),
-          "</ol>",
-          "</div>"
-        ].join("");
-      }
-
-      function renderReviewOverview(review) {
-        const overview = review.reviewOverview || {};
-        return [
-          overviewBlock(overview.title || t("reviewOverview"), [
-            "<p>" + escapeHtml(overview.summary || review.summary || "-") + "</p>",
-            detailGrid(overview.keyValues?.length ? overview.keyValues.map((item) => [item.key || "-", item.value || "-"]) : [[t("summary"), review.summary || "-"]])
-          ].join("")),
-          overviewBlock(t("reviewOverviewReadingOrder"), listHtml(overview.readingOrder?.length ? overview.readingOrder : ["-"])),
-          overviewBlock(t("reviewOverviewBatches"), renderReviewBatches(overview.batches || [])),
-          overviewBlock(t("implementationSummary"), listHtml(review.implementationSummary?.length ? review.implementationSummary : ["-"])),
-          overviewBlock(t("sourceReadingGuide"), renderSourceReadingGuide(review.sourceReadingGuide || [])),
-          overviewBlock(t("reviewWalkthrough"), listHtml(review.reviewWalkthrough?.length ? review.reviewWalkthrough : ["-"])),
-          overviewBlock(t("risks"), listHtml(review.risks?.length ? review.risks : ["-"])),
-          overviewBlock(t("testSuggestions"), listHtml(review.testSuggestions?.length ? review.testSuggestions : ["-"]))
-        ].join("");
-      }
-
-      function overviewBlock(title, body) {
-        return "<div class='memory-item compact'><h3>" + escapeHtml(title) + "</h3>" + body + "</div>";
-      }
-
-      function renderReviewBatches(batches) {
-        if (!batches.length) {
-          return emptyState(t("noRequirementBlocks"));
-        }
-
-        return "<div class='review-batch-list'>" + batches.map((batch) => [
-          "<article class='review-batch-card'>",
-          "<h3>" + escapeHtml(batch.title || "-") + "</h3>",
-          "<p>" + escapeHtml(batch.summary || "-") + "</p>",
-          detailGrid([
-            [t("requirementBlockKind"), formatRequirementBlockKind(batch.kind)],
-            [t("confidence"), formatGroupConfidence(batch.confidence)],
-            [t("requirementBlockAction"), batch.suggestedAction || "-"],
-            [t("reviewBatchSourceGroups"), batch.sourceGroupTitles?.length ? batch.sourceGroupTitles.join(", ") : "-"]
-          ]),
-          detailGrid((batch.keyValues || []).map((item) => [item.key || "-", item.value || "-"])),
-          "<h3>" + escapeHtml(t("changedFiles")) + "</h3>",
-          listHtml((batch.files || []).map((file) => file.path + " (+" + file.additions + " / -" + file.deletions + ")")),
-          "</article>"
-        ].join("")).join("") + "</div>";
-      }
-
-      function renderSourceReadingGuide(items) {
-        if (!items.length) {
-          return listHtml(["-"]);
-        }
-
-        return items.map((item) => [
-          "<div class='memory-item compact'>",
-          "<h3>" + escapeHtml(item.path || "-") + "</h3>",
-          detailGrid([
-            [t("reason"), item.reason || "-"],
-            [t("command"), item.command || "-"]
-          ]),
-          "</div>"
-        ].join("")).join("");
-      }
-
-      function renderReviewRequirementBlocks(blocks) {
-        if (!blocks.length) {
-          return emptyState(t("noRequirementBlocks"));
-        }
-
-        return blocks.map((block) => [
-          "<div class='memory-item'>",
-          "<h3>" + escapeHtml(block.title || "-") + "</h3>",
-          "<p>" + escapeHtml(block.summary || "-") + "</p>",
-          detailGrid([
-            [t("requirementBlockKind"), formatRequirementBlockKind(block.kind)],
-            [t("confidence"), formatGroupConfidence(block.confidence)],
-            [t("requirementBlockAction"), block.suggestedAction || "-"]
-          ]),
-          detailGrid((block.keyValues || []).map((item) => [item.key || "-", item.value || "-"])),
-          "<h3>" + escapeHtml(t("requirementBlockEvidence")) + "</h3>",
-          listHtml(block.evidence?.length ? block.evidence : ["-"]),
-          "<h3>" + escapeHtml(t("changedFiles")) + "</h3>",
-          listHtml((block.files || []).map((file) => file.path + " (+" + file.additions + " / -" + file.deletions + ")")),
-          "<h3>" + escapeHtml(t("reviewFocus")) + "</h3>",
-          listHtml(block.reviewFocus?.length ? block.reviewFocus : ["-"]),
-          "<h3>" + escapeHtml(t("groupTestSuggestions")) + "</h3>",
-          listHtml(block.testSuggestions?.length ? block.testSuggestions : ["-"]),
-          "</div>"
-        ].join("")).join("");
-      }
-
-      function renderReviewChangeGroups(groups) {
-        if (!groups.length) {
-          return emptyState(t("noChangeGroups"));
-        }
-
-        return groups.map((group) => [
-          "<div class='memory-item'>",
-          "<h3>" + escapeHtml(group.title || "-") + "</h3>",
-          "<p>" + escapeHtml(group.purpose || "-") + "</p>",
-          "<p class='muted'>" + escapeHtml(t("groupMatchReason")) + ": " + escapeHtml(group.matchReason || "-") + "</p>",
-          "<p class='muted'>" + escapeHtml(t("groupConfidence")) + ": " + escapeHtml(formatGroupConfidence(group.confidence)) + "</p>",
-          detailGrid((group.keyValues || []).map((item) => [item.key || "-", item.value || "-"])),
-          "<h3>" + escapeHtml(t("changedFiles")) + "</h3>",
-          listHtml((group.files || []).map((file) => file.path + " (+" + file.additions + " / -" + file.deletions + ")")),
-          "<h3>" + escapeHtml(t("reviewFocus")) + "</h3>",
-          listHtml(group.reviewNotes?.length ? group.reviewNotes : ["-"]),
-          "<h3>" + escapeHtml(t("groupTestSuggestions")) + "</h3>",
-          listHtml(group.testSuggestions?.length ? group.testSuggestions : ["-"]),
-          "</div>"
-        ].join("")).join("");
-      }
-
-      function renderRecall(data) {
-        const sessions = data.sessions || [];
-        document.getElementById("recallOutput").innerHTML = sessions.length
-          ? sessions.map((session) => sectionCard(session.title, [
-              detailGrid([
-                [t("currentRequirement"), session.requirementTitle || "-"],
-                [t("memoryId"), session.id],
-                [t("codeStatus"), formatCodeStatus(session)],
-                [t("expiresAt"), session.expiresAt]
-              ]),
-              "<p>" + escapeHtml(session.summary) + "</p>",
-              "<h3>" + escapeHtml(t("keywords")) + "</h3>",
-              listHtml(session.keywords?.length ? session.keywords : [t("noKeywords")]),
-              "<h3>" + escapeHtml(t("changedFiles")) + "</h3>",
-              listHtml(session.changedFiles?.length ? session.changedFiles : [t("noChangedFiles")])
-            ].join(""))).join("")
-          : emptyState(t("noSessions"));
-      }
-
-      function statusTitle(status) {
-        if (status === "clean") {
-          return t("recordingClean");
-        }
-        if (status === "recorded") {
-          return t("recordingRecorded");
-        }
-        if (status === "changed-after-record") {
-          return t("recordingChanged");
-        }
-        return t("recordingUnrecorded");
-      }
-
-      function renderHandoff(data) {
-        const handoff = data.handoff || data;
-        const sessions = handoff.sessions || [];
-        document.getElementById("handoffOutput").innerHTML = [
-          sectionCard(t("handoff"), [
-            detailGrid([
-              [t("project"), handoff.projectName || "-"],
-              [t("currentRequirement"), handoff.requirementTitle || "-"],
-              [t("generatedAt"), handoff.generatedAt || "-"]
-            ]),
-            "<p>" + escapeHtml(handoff.summary || "-") + "</p>"
-          ].join("")),
-          sectionCard(t("handoffPrompt"), "<div class='prompt-box'>" + escapeHtml(handoff.prompt || "-") + "</div>"),
-          sectionCard(t("keywords"), listHtml(handoff.keywords?.length ? handoff.keywords : [t("noKeywords")])),
-          sectionCard(t("changedFiles"), listHtml(handoff.changedFiles?.length ? handoff.changedFiles : [t("noChangedFiles")])),
-          sectionCard(t("recoveredSessions"), sessions.length
-            ? "<div class='memory-stack'>" + sessions.map((session) => [
-                "<div class='memory-item'>",
-                "<h3>" + escapeHtml(session.title) + "</h3>",
-                "<p>" + escapeHtml(session.summary || "-") + "</p>",
-                detailGrid([
-                  [t("memoryId"), session.id],
-                  [t("codeStatus"), formatCodeStatus(session)],
-                  [t("expiresAt"), session.expiresAt]
-                ]),
-                "</div>"
-              ].join("")).join("") + "</div>"
-            : emptyState(t("noSessions")))
-        ].join("");
-      }
-
-      function renderCapabilities(items) {
-        const rows = document.getElementById("recommendationRows");
-        rows.innerHTML = "";
-        const visibleItems = state.toolFilter === "all"
-          ? items
-          : items.filter((item) => capabilityKind(item) === state.toolFilter);
-
-        if (visibleItems.length === 0) {
-          const tr = document.createElement("tr");
-          tr.innerHTML = "<td colspan='6'>" + emptyState(t("noToolsForFilter")) + "</td>";
-          rows.appendChild(tr);
-          return;
-        }
-
-        for (const item of visibleItems) {
-          const tr = document.createElement("tr");
-          const kind = capabilityKind(item);
-          tr.innerHTML = [
-            "<td><strong>" + escapeHtml(item.name) + "</strong><br><span class='muted'>" + escapeHtml(item.id) + "</span></td>",
-            "<td>" + escapeHtml(t("type_" + kind)) + "</td>",
-            "<td><span class='tag " + escapeHtml(item.status) + "'>" + escapeHtml(t("status_" + item.status)) + "</span></td>",
-            "<td><span class='tag'>" + escapeHtml(t("risk_" + item.risk)) + "</span></td>",
-            "<td>" + capabilityDetails(item) + "</td>",
-            "<td><div class='actions'>" + actionButtons(item) + "</div></td>"
-          ].join("");
-          rows.appendChild(tr);
-        }
-      }
-
-      function capabilityKind(item) {
-        return item.kind || item.type;
-      }
-
-      function capabilityDetails(item) {
-        const parts = [];
-        if (item.reason) {
-          parts.push("<p>" + escapeHtml(item.reason) + "</p>");
-        }
-        if (item.permissions?.length) {
-          parts.push("<p><strong>" + escapeHtml(t("permissions")) + ":</strong> " + escapeHtml(item.permissions.join(", ")) + "</p>");
-        }
-        if (item.installCommand) {
-          parts.push("<p><strong>" + escapeHtml(t("command")) + ":</strong> " + inlineCode(item.installCommand) + "</p>");
-        }
-        if (item.runCommand && capabilityKind(item) === "cli") {
-          parts.push("<p><strong>" + escapeHtml(t("clientCommand")) + ":</strong> " + inlineCode(item.runCommand) + "</p>");
-        }
-        return parts.join("") || escapeHtml(item.description || "-");
-      }
-
-      function renderMarketplaceSkills(result) {
-        const container = document.getElementById("marketplaceSkills");
-
-        if (state.toolFilter === "mcp" || state.toolFilter === "cli") {
-          container.innerHTML = emptyState(t("marketplaceHiddenByFilter"));
-          return;
-        }
-
-        if (!result) {
-          container.innerHTML = emptyState(t("noMarketplaceSkills"));
-          return;
-        }
-
-        const candidates = result.candidates || [];
-        const keywordCard = sectionCard(
-          t("searchedKeywords"),
-          listHtml(result.keywords?.length ? result.keywords : ["-"]),
-        );
-        const warningCard = result.warnings?.length
-          ? sectionCard(t("marketplaceWarnings"), "<ul class='warning-list'>" + result.warnings.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>")
-          : "";
-
-        if (candidates.length === 0) {
-          container.innerHTML = keywordCard + warningCard + emptyState(t("noMarketplaceSkills"));
-          return;
-        }
-
-        container.innerHTML = keywordCard
-          + warningCard
-          + candidates.map((skill) => [
-            "<article class='marketplace-card'>",
-            "<div>",
-            "<h3>" + escapeHtml(skill.name) + "</h3>",
-            "<p>" + escapeHtml(skill.description) + "</p>",
-            "</div>",
-            "<div class='marketplace-meta'>",
-            "<span class='tag'>" + escapeHtml(skill.author) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("matchedKeyword")) + ": " + escapeHtml(skill.keyword) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("stars")) + ": " + escapeHtml(skill.stars) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("forks")) + ": " + escapeHtml(skill.forks) + "</span>",
-            "<span class='tag conflict-" + escapeHtml(skill.conflictLevel) + "'>" + escapeHtml(t("conflictLevel")) + ": " + escapeHtml(t("conflict_" + skill.conflictLevel)) + "</span>",
-            "</div>",
-            skill.conflictReasons?.length ? listHtml(skill.conflictReasons) : "",
-            "<div class='actions'>",
-            "<button class='btn' data-marketplace-preview='" + escapeHtml(skill.id) + "'>" + escapeHtml(t("previewSkillContent")) + "</button>",
-            "<button class='btn primary' data-marketplace-apply='" + escapeHtml(skill.id) + "'>" + escapeHtml(t("applyMarketplaceSkill")) + "</button>",
-            "<a class='btn' href='" + escapeHtml(skill.githubUrl) + "' target='_blank' rel='noreferrer'>" + escapeHtml(t("openGithub")) + "</a>",
-            "</div>",
-            "</article>"
-          ].join("")).join("");
-      }
-
-      function renderMarketplaceMcps(result) {
-        const container = document.getElementById("marketplaceMcps");
-
-        if (state.toolFilter === "skill" || state.toolFilter === "cli") {
-          container.innerHTML = emptyState(t("marketplaceMcpHiddenByFilter"));
-          return;
-        }
-
-        if (!result) {
-          container.innerHTML = emptyState(t("noMarketplaceMcps"));
-          return;
-        }
-
-        const candidates = result.candidates || [];
-        const keywordCard = sectionCard(
-          t("searchedKeywords"),
-          listHtml(result.keywords?.length ? result.keywords : ["-"]),
-        );
-        const warningCard = result.warnings?.length
-          ? sectionCard(t("marketplaceWarnings"), "<ul class='warning-list'>" + result.warnings.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>")
-          : "";
-
-        if (candidates.length === 0) {
-          container.innerHTML = keywordCard + warningCard + emptyState(t("noMarketplaceMcps"));
-          return;
-        }
-
-        container.innerHTML = keywordCard
-          + warningCard
-          + candidates.map((mcp) => [
-            "<article class='marketplace-card'>",
-            "<div>",
-            "<h3>" + escapeHtml(mcp.name) + "</h3>",
-            "<p>" + escapeHtml(mcp.description) + "</p>",
-            "</div>",
-            "<div class='marketplace-meta'>",
-            "<span class='tag'>" + escapeHtml(mcp.author) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("matchedKeyword")) + ": " + escapeHtml(mcp.keyword) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("transport")) + ": " + escapeHtml(mcp.runtime) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("stars")) + ": " + escapeHtml(mcp.stars) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("risk")) + ": " + escapeHtml(t("risk_" + mcp.risk)) + "</span>",
-            "<span class='tag'>" + escapeHtml(t("installable")) + ": " + escapeHtml(t(mcp.installable ? "installable_yes" : "installable_no")) + "</span>",
-            "</div>",
-            detailGrid([
-              [t("command"), mcp.packageName || mcp.url || "-"],
-              [t("envVars"), mcp.envVars?.length ? mcp.envVars.join(", ") : "-"],
-              [t("permissions"), mcp.permissions?.length ? mcp.permissions.join(", ") : "-"]
-            ]),
-            mcp.riskReasons?.length ? listHtml(mcp.riskReasons) : "",
-            "<div class='actions'>",
-            "<button class='btn primary' data-marketplace-mcp-apply='" + escapeHtml(mcp.id) + "'>" + escapeHtml(t("applyMarketplaceMcp")) + "</button>",
-            mcp.githubUrl ? "<a class='btn' href='" + escapeHtml(mcp.githubUrl) + "' target='_blank' rel='noreferrer'>" + escapeHtml(t("openGithub")) + "</a>" : "",
-            "</div>",
-            "</article>"
-          ].join("")).join("");
-      }
-
-      function actionButtons(item) {
-        const type = capabilityKind(item);
-        if (type !== "mcp" && type !== "skill") {
-          return "<span class='tag'>" + escapeHtml(item.authRequired ? "Auth" : "Local") + "</span>";
-        }
-        const id = escapeHtml(item.id);
-        const buttons = [
-          "<button class='btn primary' data-action='apply' data-type='" + type + "' data-id='" + id + "'>" + escapeHtml(t("actionEnable")) + "</button>",
-          "<button class='btn warn' data-action='disable' data-type='" + type + "' data-id='" + id + "'>" + escapeHtml(t("actionDisable")) + "</button>",
-          "<button class='btn danger' data-action='ignore' data-type='" + type + "' data-id='" + id + "'>" + escapeHtml(t("actionIgnore")) + "</button>"
-        ];
-        if (type === "skill") {
-          buttons.unshift("<button class='btn' data-skill-detail='" + id + "'>" + escapeHtml(t("viewSkillDetail")) + "</button>");
-        }
-        return buttons.join("");
-      }
-
-      function renderSkillDetail(detail) {
-        const item = detail.item || {};
-        document.getElementById("skillDetailOutput").innerHTML = [
-          sectionCard(t("skillDetail"), detailGrid([
-            [t("name"), item.name || "-"],
-            [t("source"), item.source || "-"],
-            [t("risk"), item.risk ? t("risk_" + item.risk) : "-"],
-            [t("path"), item.skillPath || "-"]
-          ])),
-          sectionCard(t("summary"), "<p>" + escapeHtml(item.description || "-") + "</p>"),
-          sectionCard(t("keywords"), listHtml(item.tags?.length ? item.tags : [t("noKeywords")])),
-          sectionCard(t("skillContent"), "<div class='codebox'>" + escapeHtml(detail.content || "") + "</div>")
-        ].join("");
-      }
-
-      function renderMarketplaceSkillPreview(preview) {
-        const skill = preview.skill || {};
-        document.getElementById("skillDetailOutput").innerHTML = [
-          sectionCard(t("skillDetail"), detailGrid([
-            [t("name"), skill.name || "-"],
-            [t("source"), skill.author || "-"],
-            [t("contentSource"), preview.contentSource || "-"],
-            [t("path"), skill.path || "-"]
-          ])),
-          sectionCard(t("summary"), "<p>" + escapeHtml(skill.description || "-") + "</p>"),
-          sectionCard(t("skillContent"), "<div class='codebox'>" + escapeHtml(preview.content || "") + "</div>")
-        ].join("");
-      }
-
-      function sectionCard(title, body) {
-        return "<article class='result-card'><h2>" + escapeHtml(title) + "</h2>" + body + "</article>";
-      }
-
-      function detailCard(title, rows) {
-        return "<div class='result-card'><h3>" + escapeHtml(title) + "</h3>" + detailGrid(rows) + "</div>";
-      }
-
-      function detailGrid(rows) {
-        return "<div class='detail-grid'>" + rows.map(([label, value]) => [
-          "<div class='detail-item'>",
-          "<div class='detail-label'>" + escapeHtml(label) + "</div>",
-          "<div class='detail-value'>" + inlineCode(value || "-") + "</div>",
-          "</div>"
-        ].join("")).join("") + "</div>";
-      }
-
-      function listHtml(items) {
-        return "<ul class='plain-list'>" + items.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>";
-      }
-
-      function formatCodeStatus(item) {
-        const status = item?.codeStatus || "unknown";
-        const reason = item?.codeStatusReason || "-";
-        return status + " - " + reason;
-      }
-
-      function formatGroupConfidence(confidence) {
-        if (confidence === "high") {
-          return state.locale === "zh-CN" ? "高" : "High";
-        }
-        if (confidence === "medium") {
-          return state.locale === "zh-CN" ? "中" : "Medium";
-        }
-        if (confidence === "low") {
-          return state.locale === "zh-CN" ? "低" : "Low";
-        }
-        return "-";
-      }
-
-      function formatRequirementBlockKind(kind) {
-        const zh = {
-          "current-work": "当前需求",
-          "historical-requirement": "历史需求",
-          "functional-area": "功能域候选",
-          "carried-work": "旧改动"
-        };
-        const en = {
-          "current-work": "Current task",
-          "historical-requirement": "Historical requirement",
-          "functional-area": "Functional candidate",
-          "carried-work": "Carried changes"
-        };
-        return (state.locale === "zh-CN" ? zh : en)[kind] || kind || "-";
-      }
-
-      function emptyState(text) {
-        return "<div class='empty-state'>" + escapeHtml(text) + "</div>";
-      }
-
-      function inlineCode(value) {
-        return "<span class='inline-code'>" + escapeHtml(value) + "</span>";
-      }
-
-      function escapeHtml(value) {
-        return String(value)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
-
-      document.addEventListener("click", async (event) => {
-        const button = event.target.closest("button");
-        if (!button) return;
-
-        const view = button.dataset.viewButton;
-        if (view) {
-          document.querySelectorAll("[data-view-button]").forEach((node) => {
-            node.classList.remove("active");
-            node.setAttribute("aria-pressed", "false");
+      });
+
+      document.body.addEventListener("click", function(event) {
+        var target = event.target.closest("[data-action]");
+        if (!target) return;
+        var action = target.dataset.action;
+        if (action === "open-modal") openModal(target.dataset.modal);
+        if (action === "close-modal") closeModal(target.dataset.modal);
+        if (action === "switch-tab") switchTab(target);
+        if (action === "refresh") loadDashboard(true);
+        if (action === "refresh-mcps") loadDashboard(true);
+        if (action === "analyze-skills") analyzeSkills(target);
+        if (action === "toggle-capability") toggleCapability(target);
+        if (action === "show-skill-detail") showSkillDetail(target.dataset.skillId);
+        if (action === "preview-market-skill") previewMarketplaceSkill(target.dataset.skillId);
+        if (action === "install-market-skill") installMarketplaceSkill(target.dataset.skillId);
+        if (action === "install-market-mcp") installMarketplaceMcp(target.dataset.mcpId);
+        if (action === "save-settings") saveSettings(target);
+        if (action === "reset-settings") resetSettings();
+        if (action === "generate-review") generateReview(target);
+        if (action === "open-memory") openMemory(target.dataset.memoryId);
+        if (action === "restore-thread") restoreThread(target.dataset.requirementId);
+        if (action === "set-active-thread") setActiveThread(target.dataset.requirementId);
+        if (action === "create-thread") createThread(target);
+        if (action === "toggle-thread") toggleThread(target);
+      });
+
+      document.body.addEventListener("click", function(event) {
+        var marketKeyword = event.target.closest("[data-market-keyword]");
+        if (marketKeyword) loadSkillMarketplace(marketKeyword.dataset.marketKeyword || "");
+        var mcpKeyword = event.target.closest("[data-mcp-keyword]");
+        if (mcpKeyword) loadMcpMarketplace(mcpKeyword.dataset.mcpKeyword || "");
+        var historyFilter = event.target.closest("[data-history-filter]");
+        if (historyFilter) {
+          state.historyFilter = historyFilter.dataset.historyFilter || "all";
+          document.querySelectorAll("[data-history-filter]").forEach(function(item) {
+            item.className = "btn " + (item.dataset.historyFilter === state.historyFilter ? "btn-primary" : "btn-secondary");
           });
-          document.querySelectorAll(".view").forEach((node) => {
-            node.classList.remove("active");
-            node.setAttribute("aria-hidden", "true");
-          });
-          button.classList.add("active");
-          button.setAttribute("aria-pressed", "true");
-          const nextView = document.getElementById(view);
-          nextView.classList.add("active");
-          nextView.setAttribute("aria-hidden", "false");
-          return;
-        }
-
-        const action = button.dataset.action;
-        if (action) {
-          try {
-            setStatus("updating");
-            await api("/api/selection/" + action, {
-              method: "POST",
-              body: JSON.stringify({ repoPath: repoInput.value, type: button.dataset.type, id: button.dataset.id })
-            });
-            await loadDashboard();
-            showToast(t("selectionUpdated"));
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
-        }
-
-        const skillDetailId = button.dataset.skillDetail;
-        if (skillDetailId) {
-          try {
-            setStatus("loadingSkillDetail");
-            const detail = await api("/api/skills/" + encodeURIComponent(skillDetailId));
-            renderSkillDetail(detail);
-            setStatus("ready");
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
-        }
-
-        const marketplacePreviewId = button.dataset.marketplacePreview;
-        if (marketplacePreviewId && state.marketplaceSkills?.candidates) {
-          const skill = state.marketplaceSkills.candidates.find((item) => item.id === marketplacePreviewId);
-          if (!skill) {
-            return;
-          }
-
-          try {
-            setStatus("loadingSkillDetail");
-            const preview = await api("/api/marketplace/skills/preview", {
-              method: "POST",
-              body: JSON.stringify({ repoPath: repoInput.value, skill })
-            });
-            renderMarketplaceSkillPreview(preview);
-            setStatus("ready");
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
-        }
-
-        const marketplaceSkillId = button.dataset.marketplaceApply;
-        if (marketplaceSkillId && state.marketplaceSkills?.candidates) {
-          const skill = state.marketplaceSkills.candidates.find((item) => item.id === marketplaceSkillId);
-          if (!skill) {
-            return;
-          }
-
-          try {
-            setStatus("applyingMarketplaceSkill");
-            await api("/api/marketplace/skills/apply", {
-              method: "POST",
-              body: JSON.stringify({ repoPath: repoInput.value, skill })
-            });
-            await loadDashboard();
-            showToast(t("marketplaceSkillApplied"));
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
-        }
-
-        const marketplaceMcpId = button.dataset.marketplaceMcpApply;
-        if (marketplaceMcpId && state.marketplaceMcps?.candidates) {
-          const mcp = state.marketplaceMcps.candidates.find((item) => item.id === marketplaceMcpId);
-          if (!mcp) {
-            return;
-          }
-
-          try {
-            setStatus("applyingMarketplaceMcp");
-            await api("/api/marketplace/mcps/apply", {
-              method: "POST",
-              body: JSON.stringify({ repoPath: repoInput.value, mcp })
-            });
-            await loadDashboard();
-            showToast(t("marketplaceMcpApplied"));
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
-        }
-
-        if (button.id === "recordCurrentDiffButton") {
-          try {
-            setStatus("recordingCurrentDiff");
-            const title = document.getElementById("reviewTitle").value.trim();
-            const data = await api("/api/record-current-diff", {
-              method: "POST",
-              body: JSON.stringify({
-                repoPath: repoInput.value,
-                title: title || undefined,
-                requirementId: activeRequirementId() || undefined
-              })
-            });
-            renderReview(data);
-            renderRecordingStatus(data.recordingStatus);
-            renderWorkSegments(data.workSegments);
-            renderTimeline(data.timeline);
-            renderRequirementDossier(data.requirementDossier);
-            await loadDashboard();
-            showToast(t("reviewSaved"));
-          } catch (error) {
-            showToast(error.message);
-            setStatus("error");
-          }
+          renderHistory();
         }
       });
 
-      document.getElementById("refreshButton").addEventListener("click", () => loadDashboard().catch((error) => showToast(error.message)));
-      document.getElementById("recommendButton").addEventListener("click", () => loadDashboard().catch((error) => showToast(error.message)));
-      projectSelect.addEventListener("change", async () => {
-        if (!projectSelect.value) {
-          return;
-        }
-
-        repoInput.value = projectSelect.value;
+      document.getElementById("projectSelect").addEventListener("change", async function(event) {
+        state.repoPath = event.target.value || state.repoPath;
         await api("/api/projects/active", {
           method: "POST",
-          body: JSON.stringify({ repoPath: repoInput.value })
+          body: { repoPath: state.repoPath }
+        });
+        await loadDashboard(true);
+      });
+
+      document.getElementById("mcpSearchInput").addEventListener("input", renderMcpList);
+      document.getElementById("historySearchInput").addEventListener("input", renderHistory);
+      document.getElementById("threadSearchInput").addEventListener("input", renderThreads);
+      document.getElementById("skillMarketplaceSearch").addEventListener("keydown", function(event) {
+        if (event.key === "Enter") loadSkillMarketplace(event.target.value.trim());
+      });
+      document.getElementById("mcpMarketplaceSearch").addEventListener("keydown", function(event) {
+        if (event.key === "Enter") loadMcpMarketplace(event.target.value.trim());
+      });
+
+      document.querySelectorAll(".modal-overlay").forEach(function(overlay) {
+        overlay.addEventListener("click", function(event) {
+          if (event.target === overlay) overlay.classList.remove("active");
+        });
+      });
+
+      document.querySelectorAll("[data-setting-toggle]").forEach(function(toggle) {
+        toggle.addEventListener("click", function() {
+          toggle.classList.toggle("active");
+        });
+      });
+    }
+
+    async function api(path, options) {
+      options = options || {};
+      var initOptions = {
+        method: options.method || "GET",
+        headers: options.headers || {}
+      };
+      if (options.body !== undefined) {
+        initOptions.headers = Object.assign({}, initOptions.headers, { "Content-Type": "application/json" });
+        initOptions.body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
+      }
+      var response = await fetch(path, initOptions);
+      var text = await response.text();
+      var data = text ? JSON.parse(text) : null;
+      if (!response.ok) {
+        throw new Error((data && data.error) || text || response.statusText);
+      }
+      return data;
+    }
+
+    async function loadProjectShell() {
+      try {
+        state.projects = await api("/api/projects");
+        renderProjects();
+      } catch (error) {
+        showToast("项目列表读取失败：" + error.message);
+      }
+    }
+
+    async function loadDashboard(forceToast) {
+      try {
+        state.dashboard = await api("/api/dashboard/summary?repo=" + encodeURIComponent(state.repoPath));
+        state.settings = state.dashboard.settings;
+        if (state.dashboard.profile && state.dashboard.profile.rootPath) state.repoPath = state.dashboard.profile.rootPath;
+        renderAll();
+        if (forceToast) showToast("已刷新当前项目状态");
+      } catch (error) {
+        showToast("项目状态读取失败：" + error.message);
+      }
+    }
+
+    function renderAll() {
+      renderProjects();
+      renderOverview();
+      renderSkills();
+      renderMcpList();
+      renderSettings();
+      renderHistory();
+      renderThreads();
+    }
+
+    function renderProjects() {
+      var select = document.getElementById("projectSelect");
+      var projects = (state.projects && state.projects.projects) || [];
+      var currentProfile = state.dashboard && state.dashboard.profile;
+      var merged = projects.slice();
+      if (currentProfile && !merged.some(function(project) { return project.rootPath === currentProfile.rootPath; })) {
+        merged.unshift({
+          id: currentProfile.id,
+          name: currentProfile.name,
+          rootPath: currentProfile.rootPath,
+          languages: currentProfile.languages || [],
+          frameworks: currentProfile.frameworks || []
+        });
+      }
+      if (merged.length === 0) {
+        merged = [{ name: shortPath(state.repoPath), rootPath: state.repoPath }];
+      }
+      select.innerHTML = merged.map(function(project) {
+        var selected = project.rootPath === state.repoPath ? " selected" : "";
+        return "<option value='" + attr(project.rootPath) + "'" + selected + ">" + h(project.name || shortPath(project.rootPath)) + "</option>";
+      }).join("");
+    }
+
+    function renderOverview() {
+      var dashboard = state.dashboard || {};
+      var profile = dashboard.profile || {};
+      var capabilitySummary = (dashboard.capabilityCenter && dashboard.capabilityCenter.summary) || {};
+      var memoryDigest = dashboard.memoryDigest || {};
+      var dossier = dashboard.requirementDossier || {};
+      var stats = [
+        [capabilitySummary.enabled || enabledCapabilities().length, "已启用能力"],
+        [skillCapabilities().length, "Skills"],
+        [mcpCapabilities().length, "MCP 服务"],
+        [memoryDigest.totalMemories || 0, "修改记忆"],
+        [dossier.totalRequirements || requirements().length || 0, "需求线程"]
+      ];
+      document.getElementById("overviewStats").innerHTML = stats.map(statCard).join("");
+
+      var events = ((dashboard.agentActivity && dashboard.agentActivity.events) || []).slice(0, 5);
+      if (events.length === 0) {
+        events = memoryItems().slice(0, 5).map(function(item) {
+          return {
+            title: item.title,
+            summary: item.latestSummary || item.summary || "已保存一次修改讲解。",
+            createdAt: item.latestUpdatedAt,
+            status: item.statusCounts && item.statusCounts.current ? "success" : "attention"
+          };
+        });
+      }
+      document.getElementById("activityList").innerHTML = events.length
+        ? events.map(function(event) {
+          var color = event.status === "error" ? "var(--danger)" : event.status === "attention" ? "var(--warning)" : "var(--success)";
+          return "<div class='list-item' style='padding:14px 16px'>" +
+            "<div style='width:8px;height:8px;border-radius:50%;background:" + color + ";flex-shrink:0;margin-top:4px'></div>" +
+            "<div class='list-item-content'><div style='font-size:13px;font-weight:500'>" + h(event.title || "SpecWeft 活动") + "</div>" +
+            "<div style='font-size:12px;color:var(--muted);margin-top:2px'>" + h(event.summary || "") + " · " + h(formatDate(event.createdAt)) + "</div></div>" +
+          "</div>";
+        }).join("")
+        : emptyState("还没有活动", "当 Codex 或 Claude 调用 SpecWeft 后，这里会出现最近动作。");
+
+      var activeThreads = threadItems().slice(0, 4);
+      document.getElementById("activeThreadList").innerHTML = activeThreads.length
+        ? activeThreads.map(function(item) {
+          return "<div class='list-item' style='padding:14px 16px;cursor:pointer'>" +
+            "<div class='list-item-content'><div style='font-size:13px;font-weight:500'>" + h(item.title) + "</div>" +
+            "<div style='font-size:12px;color:var(--muted);margin-top:2px'>" + h(item.summary || item.latestSummary || "暂无摘要") + "</div></div>" +
+            statusBadge(item.active ? "active" : item.status, item.active ? "进行中" : formatRequirementStatus(item.status)) +
+          "</div>";
+        }).join("")
+        : emptyState("还没有需求线程", "新建线程后，后续修改会按需求归档。");
+
+      if (profile.name) document.title = "SpecWeft — " + profile.name;
+    }
+
+    function renderSkills() {
+      var skills = skillCapabilities();
+      var enabled = skills.filter(function(item) { return item.status === "enabled"; });
+      var updates = (state.dashboard && state.dashboard.skillUpdateCheck && state.dashboard.skillUpdateCheck.updateCount) || 0;
+      document.getElementById("skillStats").innerHTML = [
+        [skills.length, "已安装 Skills"],
+        [enabled.length, "已启用"],
+        [updates, "可更新"]
+      ].map(statCard).join("");
+
+      document.getElementById("installedSkills").innerHTML = skills.length
+        ? skills.map(renderSkillCard).join("")
+        : emptyState("还没有安装 Skill", "可以先打开市场，或让 SpecWeft 根据当前需求推荐。");
+
+      renderRecommendedSkills();
+    }
+
+    function renderSkillCard(skill) {
+      var active = skill.status === "enabled";
+      return "<div class='card'>" +
+        "<div class='card-header'><div><div class='card-title'>" + h(skill.name) + "</div>" +
+        "<div class='card-meta'>" + h(skill.source || "local") + " · " + h(skill.risk || "low") + "</div></div>" +
+        "<button class='toggle " + (active ? "active" : "") + "' data-action='toggle-capability' data-type='skill' data-id='" + attr(skill.id) + "' data-status='" + attr(skill.status) + "' type='button'></button></div>" +
+        "<div class='card-desc'>" + h(skill.description || skill.reason || "这个 Skill 会在 Agent 执行任务前提供项目级规则。") + "</div>" +
+        "<div class='card-footer'>" + statusBadge(skill.status, active ? "● 已启用" : "已安装") +
+        "<button class='btn btn-secondary' style='font-size:12px;padding:6px 12px' data-action='show-skill-detail' data-skill-id='" + attr(skill.id) + "'>详情</button></div>" +
+      "</div>";
+    }
+
+    function renderRecommendedSkills() {
+      var suggestions = state.skillSuggestions || [];
+      var fallback = recommendations().filter(function(item) { return item.type === "skill"; }).slice(0, 6);
+      var items = suggestions.length ? suggestions : fallback;
+      document.getElementById("recommendedSkills").innerHTML = items.length
+        ? items.map(function(item) {
+          return "<div class='card'>" +
+            "<div class='card-header'><div><div class='card-title'>" + h(item.name) + "</div>" +
+            "<div class='card-meta'>" + h(item.status || "recommended") + "</div></div><span class='badge badge-available'>推荐</span></div>" +
+            "<div class='card-desc'>" + h(item.reason || item.usageHint || "适合当前项目画像。") + "</div>" +
+            "<div class='card-footer'><span style='font-size:12px;color:var(--muted)'>" + h(item.conflictRisk ? "冲突风险：" + item.conflictRisk : item.risk ? "风险：" + item.risk : "本地规则优先") + "</span>" +
+            "<button class='btn btn-primary' style='font-size:12px;padding:6px 12px' data-action='toggle-capability' data-type='skill' data-id='" + attr(item.id) + "' data-status='" + attr(item.status || "recommended") + "'>启用</button></div>" +
+          "</div>";
+        }).join("")
+        : emptyState("暂无推荐", "输入需求后点击分析；外部 Skill 请从浏览市场单独获取。");
+    }
+
+    function renderMcpList() {
+      var query = (document.getElementById("mcpSearchInput").value || "").toLowerCase();
+      var mcps = mcpCapabilities().filter(function(item) {
+        return !query || (item.name + " " + item.description + " " + item.id).toLowerCase().indexOf(query) >= 0;
+      });
+      document.getElementById("mcpList").innerHTML = mcps.length
+        ? mcps.map(function(mcp) {
+          var active = mcp.status === "enabled";
+          return "<div class='list-item' data-name='" + attr(mcp.name.toLowerCase()) + "'>" +
+            "<div class='list-item-icon'>" + terminalIcon() + "</div>" +
+            "<div class='list-item-content'><div class='list-item-title'>" + h(mcp.name) + "</div>" +
+            "<div class='list-item-desc'>" + h(mcp.description || mcp.reason || "项目可用 MCP 服务") + "</div></div>" +
+            "<div class='list-item-actions'>" + statusBadge(mcp.status, active ? "● 运行中" : "已安装") +
+            "<button class='toggle " + (active ? "active" : "") + "' data-action='toggle-capability' data-type='mcp' data-id='" + attr(mcp.id) + "' data-status='" + attr(mcp.status) + "' type='button'></button></div>" +
+          "</div>";
+        }).join("")
+        : emptyState("没有匹配的 MCP", "MCP 是按需能力，不需要为每个项目都安装。");
+    }
+
+    function renderSettings() {
+      var settings = state.settings || defaultSettings();
+      setToggle("autoRecordDiffInput", settings.changeRecording && settings.changeRecording.autoRecordDiff);
+      setToggle("autoLinkRequirementInput", settings.changeRecording && settings.changeRecording.autoLinkRequirement);
+      setInput("retentionDaysInput", settings.changeRecording && settings.changeRecording.retentionDays);
+      setInput("maxRetainedTurnsInput", settings.contextMemory && settings.contextMemory.maxRetainedTurns);
+      setInput("compressionStrategyInput", settings.contextMemory && settings.contextMemory.compressionStrategy);
+      setInput("ignorePathsInput", ((settings.contextMemory && settings.contextMemory.ignorePaths) || []).join("\\n"));
+      setInput("skillRegistryUrlInput", settings.capabilities && settings.capabilities.skillRegistryUrl);
+      setToggle("autoCheckSkillUpdatesInput", settings.capabilities && settings.capabilities.autoCheckSkillUpdates);
+      setInput("mcpTimeoutInput", Math.round(((settings.capabilities && settings.capabilities.mcpStdioTimeoutMs) || 30000) / 1000));
+    }
+
+    function renderHistory() {
+      var query = (document.getElementById("historySearchInput").value || "").toLowerCase();
+      var items = memoryItems().filter(function(item) {
+        var status = dominantCodeStatus(item);
+        var matchesFilter = state.historyFilter === "all" || (state.historyFilter === "current" && status === "current") || (state.historyFilter === "stale" && status !== "current");
+        var text = (item.title + " " + (item.latestSummary || item.summary || "") + " " + ((item.keyFiles || item.changedFiles || []).join(" "))).toLowerCase();
+        return matchesFilter && (!query || text.indexOf(query) >= 0);
+      });
+      document.getElementById("historyList").innerHTML = items.length
+        ? items.map(function(item) {
+          var files = item.keyFiles || item.changedFiles || [];
+          var status = dominantCodeStatus(item);
+          return "<div class='list-item' style='align-items:flex-start;gap:20px;padding:20px'>" +
+            "<div style='text-align:right;flex-shrink:0;width:80px'><div style='font-size:11px;color:var(--muted);font-weight:500;letter-spacing:0.02em'>" + h(dayLabel(item.latestUpdatedAt || item.updatedAt || item.createdAt)) + "</div>" +
+            "<div style='font-size:11px;color:var(--muted)'>" + h(timeLabel(item.latestUpdatedAt || item.updatedAt || item.createdAt)) + "</div></div>" +
+            "<div style='flex:1;min-width:0'><div style='font-size:14px;font-weight:500;margin-bottom:4px'>" + h(item.title) + "</div>" +
+            "<div style='font-size:12px;color:var(--muted);margin-bottom:8px'>" + h(item.requirementTitle || "未绑定需求") + " · " + h(formatCodeStatus(status)) + "</div>" +
+            "<div style='font-size:13px;color:var(--fg);line-height:1.5;margin-bottom:10px'>" + h(item.latestSummary || item.summary || "这次修改已经记录到 SpecWeft。") + "</div>" +
+            "<div style='display:flex;gap:8px;flex-wrap:wrap'>" + files.slice(0, 4).map(function(file) { return "<span class='badge badge-muted'>" + h(file) + "</span>"; }).join("") + "</div></div>" +
+            "<button class='btn btn-secondary' style='font-size:12px;padding:6px 12px;flex-shrink:0' data-action='open-memory' data-memory-id='" + attr(item.id) + "'>查看讲解</button>" +
+          "</div>";
+        }).join("")
+        : emptyState("还没有修改记录", "点击右上角生成当前修改讲解，或让 Agent 通过 MCP 自动记录。");
+    }
+
+    function renderThreads() {
+      var query = (document.getElementById("threadSearchInput").value || "").toLowerCase();
+      var items = threadItems().filter(function(item) {
+        var text = (item.title + " " + (item.summary || item.latestSummary || "") + " " + ((item.keywords || []).join(" "))).toLowerCase();
+        return !query || text.indexOf(query) >= 0;
+      });
+      document.getElementById("threadList").innerHTML = items.length
+        ? items.map(function(item) {
+          var sessions = item.sessions || [];
+          return "<div class='thread-wrap'>" +
+            "<div class='thread-head' data-action='toggle-thread'><div style='flex:1;min-width:0'>" +
+            "<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap'><span style='font-size:15px;font-weight:500'>" + h(item.title) + "</span>" + statusBadge(item.active ? "active" : item.status, item.active ? "进行中" : formatRequirementStatus(item.status)) + "</div>" +
+            "<div style='font-size:13px;color:var(--fg);line-height:1.5;margin-bottom:12px'>" + h(item.summary || item.latestSummary || "暂无摘要") + "</div>" +
+            "<div style='display:flex;align-items:center;gap:16px;flex-wrap:wrap'><span style='font-size:12px;color:var(--muted)'>" + h(String(item.sessionCount || sessions.length || 0)) + " 次 AI 修改</span><span style='font-size:12px;color:var(--muted)'>" + h(formatDate(item.latestUpdatedAt)) + "</span></div>" +
+            "</div><div style='display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap'>" +
+            "<button class='btn btn-secondary' style='font-size:12px;padding:6px 12px' data-action='restore-thread' data-requirement-id='" + attr(item.requirementId || item.id) + "'>恢复上下文</button>" +
+            "<button class='btn btn-secondary' style='font-size:12px;padding:6px 12px' data-action='set-active-thread' data-requirement-id='" + attr(item.requirementId || item.id) + "'>设为当前</button>" +
+            "<svg class='tl-arrow' width='16' height='16' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/></svg></div></div>" +
+            "<div class='thread-tl'><div class='tl-track'>" + renderThreadSessions(sessions) + "</div></div></div>";
+        }).join("")
+        : emptyState("还没有需求线程", "可以新建线程，也可以在 Agent 修改后自动归档。");
+    }
+
+    function renderThreadSessions(sessions) {
+      if (!sessions || sessions.length === 0) {
+        return "<div class='tl-item'><div style='font-size:13px;color:var(--muted)'>暂无关联修改</div></div>";
+      }
+      return sessions.slice(0, 6).map(function(session) {
+        return "<div class='tl-item'><div style='font-size:13px;font-weight:500;margin-bottom:3px'>" + h(session.title) + "</div>" +
+          "<div style='font-size:12px;color:var(--muted);margin-bottom:6px'>" + h(formatDate(session.updatedAt || session.createdAt)) + "</div>" +
+          "<div style='font-size:13px;color:var(--fg);margin-bottom:8px'>" + h(session.summary || "") + "</div>" +
+          "<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap'>" + (session.changedFiles || []).slice(0, 3).map(function(file) { return "<span class='badge badge-muted'>" + h(file) + "</span>"; }).join("") + "</div></div>";
+      }).join("");
+    }
+
+    async function analyzeSkills(button) {
+      var input = document.getElementById("skillTaskInput");
+      var task = (input.value || "").trim();
+      if (!task) {
+        var profile = state.dashboard && state.dashboard.profile;
+        task = "请根据当前项目 " + ((profile && profile.name) || "代码库") + " 推荐适合新手使用 Codex/Claude 的 Skills";
+      }
+      setBusy(button, true, "分析中");
+      try {
+        var result = await api("/api/task-skills", {
+          method: "POST",
+          body: { repoPath: state.repoPath, task: task }
+        });
+        state.skillSuggestions = result.skillSuggestions || [];
+        switchTabByName("skills", "recommended");
+        renderRecommendedSkills();
+        showToast("已根据需求生成本地 Skill 推荐");
+      } catch (error) {
+        showToast("推荐失败：" + error.message);
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    async function toggleCapability(button) {
+      var type = button.dataset.type;
+      var id = button.dataset.id;
+      var status = button.dataset.status;
+      var action = status === "enabled" ? "disable" : "apply";
+      setBusy(button, true);
+      try {
+        await api("/api/selection/" + action, {
+          method: "POST",
+          body: { repoPath: state.repoPath, type: type, id: id }
         });
         await loadDashboard();
-      });
-      requirementSelect.addEventListener("change", async () => {
-        if (!requirementSelect.value) {
-          return;
-        }
+        showToast((action === "apply" ? "已启用 " : "已停用 ") + id);
+      } catch (error) {
+        showToast("操作失败：" + error.message);
+      } finally {
+        setBusy(button, false);
+      }
+    }
 
-        try {
-          setStatus("updating");
-          await api("/api/requirements/active", {
-            method: "POST",
-            body: JSON.stringify({ repoPath: repoInput.value, id: requirementSelect.value })
-          });
-          await loadDashboard();
-          showToast(t("requirementActivated"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      languageSelect.addEventListener("change", () => {
-        state.locale = languageSelect.value;
-        localStorage.setItem("specweft.locale", state.locale);
-        applyLocale();
-      });
-      toolFilterSelect.addEventListener("change", () => {
-        state.toolFilter = toolFilterSelect.value;
-        localStorage.setItem("specweft.toolFilter", state.toolFilter);
-        applyLocale();
-      });
-      document.getElementById("poolButton").addEventListener("click", async () => {
-        try {
-          setStatus("initializingPool");
-          await api("/api/pool/init", { method: "POST", body: JSON.stringify({}) });
-          await loadDashboard();
-          showToast(t("poolInitialized"));
-        } catch (error) {
-          showToast(error.message);
-        }
-      });
-      document.getElementById("registerProjectButton").addEventListener("click", async () => {
-        try {
-          setStatus("updating");
-          await api("/api/projects/register", {
-            method: "POST",
-            body: JSON.stringify({ repoPath: repoInput.value })
-          });
-          await loadProjects(repoInput.value);
-          await loadDashboard();
-          showToast(t("projectRegistered"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("createRequirementButton").addEventListener("click", async () => {
-        const title = requirementTitleInput.value.trim();
-        if (!title) {
-          showToast(t("requirementTitlePlaceholder"));
-          return;
-        }
+    async function showSkillDetail(skillId) {
+      if (!skillId) return;
+      openDetail("Skill 详情", skillId, "<p>正在读取 Skill 内容…</p>");
+      try {
+        var detail = await api("/api/skills/" + encodeURIComponent(skillId));
+        var html = "<p>" + h(detail.description || "本地 Skill") + "</p>";
+        if (detail.path) html += "<p><strong>路径：</strong>" + h(detail.path) + "</p>";
+        if (detail.content) html += "<pre class='codebox'>" + h(detail.content) + "</pre>";
+        openDetail(detail.name || skillId, detail.source || skillId, html);
+      } catch (error) {
+        openDetail("Skill 详情", skillId, "<p>读取失败：" + h(error.message) + "</p>");
+      }
+    }
 
-        try {
-          setStatus("updating");
-          await api("/api/requirements", {
-            method: "POST",
-            body: JSON.stringify({
-              repoPath: repoInput.value,
-              title,
-              keywords: title.split(/\\s+/).filter(Boolean)
-            })
-          });
-          requirementTitleInput.value = "";
-          await loadDashboard();
-          showToast(t("requirementCreated"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("assemblyButton").addEventListener("click", async () => {
-        const data = await api("/api/assembly?repo=" + encodeURIComponent(repoInput.value));
-        renderAssembly(data);
-      });
-      document.getElementById("connectButton").addEventListener("click", async () => {
-        const [config, llmConfig] = await Promise.all([
-          api("/api/mcp-inspect?repo=" + encodeURIComponent(repoInput.value)),
-          api("/api/llm-config")
-        ]);
-        renderConnect(config);
-        renderLlmConfig(llmConfig);
-      });
-      document.getElementById("prepareTaskButton").addEventListener("click", async () => {
-        const task = document.getElementById("taskInput").value.trim();
-        if (!task) {
-          showToast(t("taskPlaceholder"));
-          return;
-        }
+    async function loadSkillMarketplace(keyword) {
+      var list = document.getElementById("skillMarketplaceList");
+      if (list) list.innerHTML = loadingCard("正在读取 Skills 市场…");
+      try {
+        var url = "/api/marketplace/skills?repo=" + encodeURIComponent(state.repoPath);
+        if (keyword) url += "&keyword=" + encodeURIComponent(keyword);
+        state.skillMarket = await api(url);
+        renderSkillMarketplace();
+      } catch (error) {
+        if (list) list.innerHTML = emptyState("市场读取失败", error.message);
+      }
+    }
 
-        try {
-          setStatus("preparingTask");
-          const data = await api("/api/prepare", {
-            method: "POST",
-            body: JSON.stringify({ repoPath: repoInput.value, task })
-          });
-          renderPreparedTask(data);
-          setStatus("ready");
-          showToast(t("taskPrepared"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("marketplaceSearchButton").addEventListener("click", async () => {
-        const keyword = document.getElementById("marketplaceKeywordInput").value.trim();
-        setStatus("searchingMarketplace");
-        const data = await api("/api/marketplace/skills?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
-        state.marketplaceSkills = data;
-        renderMarketplaceSkills(data);
-        setStatus("ready");
-      });
-      document.getElementById("marketplaceMcpSearchButton").addEventListener("click", async () => {
-        const keyword = document.getElementById("marketplaceMcpKeywordInput").value.trim();
-        setStatus("searchingMarketplaceMcp");
-        const data = await api("/api/marketplace/mcps?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
-        state.marketplaceMcps = data;
-        renderMarketplaceMcps(data);
-        setStatus("ready");
-      });
-      document.getElementById("reviewButton").addEventListener("click", async () => {
-        try {
-          setStatus("creatingReview");
-          const title = document.getElementById("reviewTitle").value.trim();
-          const data = await api("/api/review", {
-            method: "POST",
-            body: JSON.stringify({
-              repoPath: repoInput.value,
-              title: title || undefined,
-              requirementId: activeRequirementId() || undefined
-            })
-          });
-          renderReview(data);
-          if (data.recordingStatus) {
-            renderRecordingStatus(data.recordingStatus);
-          }
-          if (data.workSegments) {
-            renderWorkSegments(data.workSegments);
-          }
-          if (data.timeline) {
-            renderTimeline(data.timeline);
-          }
-          if (data.requirementDossier) {
-            renderRequirementDossier(data.requirementDossier);
-          }
-          await loadDashboard();
-          showToast(t("reviewSaved"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("digestButton").addEventListener("click", async () => {
-        try {
-          setStatus("loadingMemory");
-          const [digest, dossier] = await Promise.all([
-            api("/api/memory-digest?repo=" + encodeURIComponent(repoInput.value)),
-            api("/api/requirement-dossier?repo=" + encodeURIComponent(repoInput.value))
-          ]);
-          renderMemoryDigest(digest);
-          renderRequirementDossier(dossier);
-          setStatus("ready");
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("recallButton").addEventListener("click", async () => {
-        try {
-          setStatus("loadingMemory");
-          const keyword = document.getElementById("keywordInput").value.trim();
-          const data = await api("/api/recall?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword) + "&requirementId=" + encodeURIComponent(activeRequirementId()));
-          renderRecall(data);
-          setStatus("ready");
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
-      document.getElementById("handoffButton").addEventListener("click", async () => {
-        try {
-          setStatus("loadingMemory");
-          const keyword = document.getElementById("keywordInput").value.trim();
-          const data = await api("/api/handoff?repo=" + encodeURIComponent(repoInput.value) + "&keyword=" + encodeURIComponent(keyword));
-          renderHandoff(data);
-          setStatus("ready");
-          showToast(t("handoffReady"));
-        } catch (error) {
-          showToast(error.message);
-          setStatus("error");
-        }
-      });
+    function renderSkillMarketplace() {
+      var list = document.getElementById("skillMarketplaceList");
+      if (!list) return;
+      var items = ((state.skillMarket && state.skillMarket.candidates) || []).slice(0, 12);
+      list.innerHTML = items.length
+        ? items.map(function(skill) {
+          return "<div class='card'><div class='card-title' style='margin-bottom:6px'>" + h(skill.name) + "</div>" +
+            "<div class='card-meta'>" + h(skill.author || "community") + " · ★ " + h(String(skill.stars || 0)) + "</div>" +
+            "<div class='card-desc'>" + h(skill.description || "") + "</div>" +
+            "<div class='card-footer'><span style='font-size:12px;color:var(--muted)'>匹配度 " + h(String(skill.relevance || 0)) + "%</span>" +
+            "<div class='inline-row'><button class='btn btn-secondary' style='font-size:12px;padding:6px 12px' data-action='preview-market-skill' data-skill-id='" + attr(skill.id) + "'>详情</button>" +
+            "<button class='btn btn-primary' style='font-size:12px;padding:6px 12px' data-action='install-market-skill' data-skill-id='" + attr(skill.id) + "'>安装</button></div></div></div>";
+        }).join("")
+        : emptyState("没有找到 Skill", "换一个关键词试试，例如 java、review、test。");
+    }
 
-      repoInput.value = new URLSearchParams(window.location.search).get("repo") || ${JSON.stringify(repoPath)};
-      applyLocale();
-      renderEmptyOutputs();
-      loadProjects(repoInput.value).catch((error) => showToast(error.message));
-      loadDashboard().catch((error) => {
-        showToast(error.message);
-        setStatus("error");
+    async function previewMarketplaceSkill(skillId) {
+      var skill = findMarketSkill(skillId);
+      if (!skill) return;
+      openDetail(skill.name, "正在读取 SKILL.md", "<p>正在读取市场内容…</p>");
+      try {
+        var preview = await api("/api/marketplace/skills/preview", {
+          method: "POST",
+          body: { repoPath: state.repoPath, skill: skill }
+        });
+        openDetail(skill.name, skill.githubUrl || skill.author, "<p>" + h(skill.description) + "</p><pre class='codebox'>" + h(preview.content || "") + "</pre>");
+      } catch (error) {
+        openDetail(skill.name, "读取失败", "<p>" + h(error.message) + "</p>");
+      }
+    }
+
+    async function installMarketplaceSkill(skillId) {
+      var skill = findMarketSkill(skillId);
+      if (!skill) return;
+      try {
+        await api("/api/marketplace/skills/apply", {
+          method: "POST",
+          body: { repoPath: state.repoPath, skill: skill }
+        });
+        closeModal("marketplaceModal");
+        await loadDashboard();
+        showToast("已安装并启用 Skill：" + skill.name);
+      } catch (error) {
+        showToast("安装失败：" + error.message);
+      }
+    }
+
+    async function loadMcpMarketplace(keyword) {
+      var list = document.getElementById("mcpMarketplaceList");
+      if (list) list.innerHTML = loadingList("正在读取 MCP 市场…");
+      try {
+        var url = "/api/marketplace/mcps?repo=" + encodeURIComponent(state.repoPath);
+        if (keyword) url += "&keyword=" + encodeURIComponent(keyword);
+        state.mcpMarket = await api(url);
+        renderMcpMarketplace();
+      } catch (error) {
+        if (list) list.innerHTML = emptyState("MCP 市场读取失败", error.message);
+      }
+    }
+
+    function renderMcpMarketplace() {
+      var list = document.getElementById("mcpMarketplaceList");
+      if (!list) return;
+      var items = ((state.mcpMarket && state.mcpMarket.candidates) || []).slice(0, 10);
+      list.innerHTML = items.length
+        ? items.map(function(mcp) {
+          return "<div class='list-item' style='padding:16px'>" +
+            "<div class='list-item-icon'>" + terminalIcon() + "</div>" +
+            "<div class='list-item-content'><div class='list-item-title'>" + h(mcp.name) + "</div>" +
+            "<div class='list-item-desc'>" + h(mcp.description || "") + "</div></div>" +
+            "<div class='list-item-actions'><span class='badge badge-muted'>" + h(mcp.runtime || "stdio") + "</span>" +
+            "<button class='btn btn-primary' style='font-size:12px;padding:6px 12px' data-action='install-market-mcp' data-mcp-id='" + attr(mcp.id) + "'>安装</button></div></div>";
+        }).join("")
+        : emptyState("没有找到 MCP", "MCP 是可选能力，可以先不处理。");
+    }
+
+    async function installMarketplaceMcp(mcpId) {
+      var mcp = findMarketMcp(mcpId);
+      if (!mcp) return;
+      try {
+        await api("/api/marketplace/mcps/apply", {
+          method: "POST",
+          body: { repoPath: state.repoPath, mcp: mcp }
+        });
+        closeModal("mcpMarketplaceModal");
+        await loadDashboard();
+        showToast("已安装并启用 MCP：" + mcp.name);
+      } catch (error) {
+        showToast("安装失败：" + error.message);
+      }
+    }
+
+    async function saveSettings(button) {
+      setBusy(button, true, "保存中");
+      try {
+        var patch = {
+          changeRecording: {
+            autoRecordDiff: getToggle("autoRecordDiffInput"),
+            autoLinkRequirement: getToggle("autoLinkRequirementInput"),
+            retentionDays: Number(document.getElementById("retentionDaysInput").value || 0)
+          },
+          contextMemory: {
+            maxRetainedTurns: Number(document.getElementById("maxRetainedTurnsInput").value || 20),
+            compressionStrategy: document.getElementById("compressionStrategyInput").value,
+            ignorePaths: document.getElementById("ignorePathsInput").value.split("\\n").map(function(item) { return item.trim(); }).filter(Boolean)
+          },
+          capabilities: {
+            skillRegistryUrl: document.getElementById("skillRegistryUrlInput").value.trim(),
+            autoCheckSkillUpdates: getToggle("autoCheckSkillUpdatesInput"),
+            mcpStdioTimeoutMs: Number(document.getElementById("mcpTimeoutInput").value || 30) * 1000
+          }
+        };
+        state.settings = await api("/api/settings", {
+          method: "POST",
+          body: { repoPath: state.repoPath, settings: patch }
+        });
+        renderSettings();
+        showToast("配置已保存");
+      } catch (error) {
+        showToast("保存失败：" + error.message);
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    function resetSettings() {
+      state.settings = defaultSettings();
+      renderSettings();
+      showToast("已恢复为默认值，点击保存后生效");
+    }
+
+    async function generateReview(button) {
+      setBusy(button, true, "生成中");
+      try {
+        var data = await api("/api/review", {
+          method: "POST",
+          body: { repoPath: state.repoPath }
+        });
+        state.lastReview = data;
+        if (data.memory) upsertMemory(data.memory);
+        await loadDashboard();
+        openReview(data.title || "代码讲解", data.reportPath || "已写入 SpecWeft 记忆", data.html || renderReviewSummary(data));
+        showToast("已生成当前修改讲解");
+      } catch (error) {
+        openReview("代码讲解", "生成失败", "<p>" + h(error.message) + "</p>");
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    function openMemory(memoryId) {
+      var item = memoryItems().find(function(memory) { return memory.id === memoryId; });
+      if (!item) return;
+      var files = item.keyFiles || item.changedFiles || [];
+      var html = "<p>" + h(item.latestSummary || item.summary || "暂无摘要") + "</p>";
+      if (item.compressedSummary) html += "<p><strong>压缩摘要：</strong>" + h(item.compressedSummary) + "</p>";
+      if (files.length) html += "<p><strong>涉及文件：</strong></p><p>" + files.map(function(file) { return "<span class='badge badge-muted'>" + h(file) + "</span>"; }).join(" ") + "</p>";
+      if (item.restoreHint) html += "<p><strong>恢复提示：</strong>" + h(item.restoreHint) + "</p>";
+      openReview(item.title, item.requirementTitle || "修改记忆", html);
+    }
+
+    async function restoreThread(requirementId) {
+      if (!requirementId) return;
+      openReview("恢复上下文", "正在生成线程交接摘要", "<p>正在读取需求记忆…</p>");
+      try {
+        var result = await api("/api/restore-requirement", {
+          method: "POST",
+          body: { repoPath: state.repoPath, requirementId: requirementId }
+        });
+        var html = "<p>" + h(result.summary || "已恢复需求上下文。") + "</p>";
+        if (result.handoff && result.handoff.prompt) html += "<h3>给 Agent 的上下文入口</h3><pre class='codebox'>" + h(result.handoff.prompt) + "</pre>";
+        openReview((result.requirement && result.requirement.title) || "恢复上下文", "可以复制给新线程，也可以由 MCP 自动读取", html);
+      } catch (error) {
+        openReview("恢复上下文", "失败", "<p>" + h(error.message) + "</p>");
+      }
+    }
+
+    async function setActiveThread(requirementId) {
+      if (!requirementId) return;
+      try {
+        await api("/api/requirements/active", {
+          method: "POST",
+          body: { repoPath: state.repoPath, id: requirementId }
+        });
+        await loadDashboard();
+        showToast("已切换当前需求线程");
+      } catch (error) {
+        showToast("切换失败：" + error.message);
+      }
+    }
+
+    async function createThread(button) {
+      var title = document.getElementById("newThreadTitle").value.trim();
+      var summary = document.getElementById("newThreadSummary").value.trim();
+      var keywords = document.getElementById("newThreadKeywords").value.split(",").map(function(item) { return item.trim(); }).filter(Boolean);
+      if (!title) {
+        showToast("请先填写需求标题");
+        return;
+      }
+      setBusy(button, true, "创建中");
+      try {
+        await api("/api/requirements", {
+          method: "POST",
+          body: { repoPath: state.repoPath, title: title, summary: summary, keywords: keywords }
+        });
+        closeModal("newThreadModal");
+        document.getElementById("newThreadTitle").value = "";
+        document.getElementById("newThreadSummary").value = "";
+        document.getElementById("newThreadKeywords").value = "";
+        await loadDashboard();
+        switchView("threads");
+        showToast("需求线程已创建");
+      } catch (error) {
+        showToast("创建失败：" + error.message);
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    function switchView(view) {
+      if (!viewTitles[view]) view = "skills";
+      state.activeView = view;
+      location.hash = view;
+      document.getElementById("pageTitle").textContent = viewTitles[view];
+      document.querySelectorAll(".nav-item").forEach(function(item) {
+        item.classList.toggle("active", item.dataset.viewTarget === view);
       });
-    </script>
-  </body>
+      document.querySelectorAll(".view").forEach(function(panel) {
+        panel.classList.toggle("active", panel.id === "view-" + view);
+      });
+      document.querySelectorAll(".topbar-actions").forEach(function(panel) {
+        panel.classList.remove("active");
+      });
+      var actions = document.getElementById("topbarActions" + capitalize(view));
+      if (actions) actions.classList.add("active");
+    }
+
+    function switchTab(button) {
+      switchTabByName(button.dataset.tabGroup, button.dataset.tab);
+    }
+
+    function switchTabByName(group, tab) {
+      document.querySelectorAll("[data-tab-group='" + group + "']").forEach(function(item) {
+        item.classList.toggle("active", item.dataset.tab === tab);
+      });
+      document.querySelectorAll("[data-tab-panel^='" + group + ":']").forEach(function(panel) {
+        panel.style.display = panel.dataset.tabPanel === group + ":" + tab ? "" : "none";
+      });
+    }
+
+    function toggleThread(target) {
+      var wrap = target.closest(".thread-wrap");
+      if (!wrap) return;
+      var timeline = wrap.querySelector(".thread-tl");
+      var arrow = wrap.querySelector(".tl-arrow");
+      var open = timeline.classList.contains("open");
+      timeline.classList.toggle("open", !open);
+      if (arrow) arrow.style.transform = open ? "" : "rotate(180deg)";
+    }
+
+    function openModal(id) {
+      var modal = document.getElementById(id);
+      if (modal) modal.classList.add("active");
+    }
+
+    function closeModal(id) {
+      var modal = document.getElementById(id);
+      if (modal) modal.classList.remove("active");
+    }
+
+    function openDetail(title, meta, html) {
+      document.getElementById("detailTitle").textContent = title || "详情";
+      document.getElementById("detailMeta").textContent = meta || "";
+      document.getElementById("detailBody").innerHTML = html || "";
+      openModal("detailModal");
+    }
+
+    function openReview(title, meta, html) {
+      document.getElementById("reviewTitle").textContent = title || "代码讲解";
+      document.getElementById("reviewMeta").textContent = meta || "";
+      document.getElementById("reviewBody").innerHTML = html || "";
+      openModal("reviewModal");
+    }
+
+    function capabilities() {
+      return (state.dashboard && state.dashboard.capabilityCenter && state.dashboard.capabilityCenter.capabilities) || [];
+    }
+
+    function skillCapabilities() {
+      return capabilities().filter(function(item) { return item.kind === "skill" && item.status !== "ignored"; });
+    }
+
+    function mcpCapabilities() {
+      return capabilities().filter(function(item) { return item.kind === "mcp" && item.status !== "ignored"; });
+    }
+
+    function enabledCapabilities() {
+      return capabilities().filter(function(item) { return item.status === "enabled"; });
+    }
+
+    function recommendations() {
+      return (state.dashboard && state.dashboard.recommendations) || [];
+    }
+
+    function requirements() {
+      return (state.dashboard && state.dashboard.requirements) || [];
+    }
+
+    function memoryItems() {
+      return (state.dashboard && state.dashboard.memoryDigest && state.dashboard.memoryDigest.items) || [];
+    }
+
+    function threadItems() {
+      var dossierItems = (state.dashboard && state.dashboard.requirementDossier && state.dashboard.requirementDossier.items) || [];
+      if (dossierItems.length) return dossierItems;
+      return requirements().map(function(req) {
+        return {
+          id: req.id,
+          requirementId: req.id,
+          title: req.title,
+          summary: req.summary,
+          status: req.status,
+          active: state.dashboard && state.dashboard.requirementDossier && state.dashboard.requirementDossier.activeRequirementId === req.id,
+          sessionCount: req.reviewCount,
+          sessions: [],
+          keywords: req.keywords || [],
+          latestUpdatedAt: req.updatedAt
+        };
+      });
+    }
+
+    function findMarketSkill(skillId) {
+      return ((state.skillMarket && state.skillMarket.candidates) || [])
+        .find(function(item) { return item.id === skillId; });
+    }
+
+    function findMarketMcp(mcpId) {
+      return ((state.mcpMarket && state.mcpMarket.candidates) || []).find(function(item) { return item.id === mcpId; });
+    }
+
+    function upsertMemory(memory) {
+      if (!state.dashboard) state.dashboard = {};
+      if (!state.dashboard.memoryDigest) state.dashboard.memoryDigest = { items: [] };
+      var items = state.dashboard.memoryDigest.items || [];
+      state.dashboard.memoryDigest.items = [memory].concat(items.filter(function(item) { return item.id !== memory.id; }));
+    }
+
+    function defaultSettings() {
+      return {
+        changeRecording: { autoRecordDiff: true, autoLinkRequirement: true, retentionDays: 90 },
+        contextMemory: { maxRetainedTurns: 20, compressionStrategy: "summary", ignorePaths: ["node_modules/", "dist/"] },
+        capabilities: { skillRegistryUrl: "https://skillsmp.com/api/skills", autoCheckSkillUpdates: true, mcpStdioTimeoutMs: 30000 }
+      };
+    }
+
+    function setInput(id, value) {
+      var input = document.getElementById(id);
+      if (input) input.value = value === undefined || value === null ? "" : String(value);
+    }
+
+    function setToggle(id, value) {
+      var button = document.getElementById(id);
+      if (button) button.classList.toggle("active", Boolean(value));
+    }
+
+    function getToggle(id) {
+      var button = document.getElementById(id);
+      return Boolean(button && button.classList.contains("active"));
+    }
+
+    function setBusy(button, busy, label) {
+      if (!button) return;
+      if (busy) {
+        button.dataset.originalText = button.textContent;
+        button.textContent = label || "处理中";
+        button.disabled = true;
+      } else {
+        button.textContent = button.dataset.originalText || button.textContent;
+        button.disabled = false;
+      }
+    }
+
+    function statCard(item) {
+      return "<div class='stat-card'><div class='stat-value'>" + h(item[0]) + "</div><div class='stat-label'>" + h(item[1]) + "</div></div>";
+    }
+
+    function statusBadge(status, label) {
+      var cls = status === "enabled" || status === "active" || status === "done" || status === "current"
+        ? "badge-installed"
+        : status === "recommended" || status === "available"
+          ? "badge-available"
+          : status === "paused" || status === "attention"
+            ? "badge-warning"
+            : "badge-muted";
+      return "<span class='badge " + cls + "'>" + h(label || status || "unknown") + "</span>";
+    }
+
+    function emptyState(title, desc) {
+      return "<div class='empty-state'><h3>" + h(title) + "</h3><p>" + h(desc || "") + "</p></div>";
+    }
+
+    function loadingCard(text) {
+      return "<div class='card'><div class='card-desc'>" + h(text) + "</div></div>";
+    }
+
+    function loadingList(text) {
+      return "<div class='list-item'><div class='list-item-content'><div class='list-item-title'>" + h(text) + "</div></div></div>";
+    }
+
+    function renderReviewSummary(data) {
+      var review = data.review || {};
+      var memory = data.memory || {};
+      var html = "<p>" + h(memory.summary || review.summary || "已生成代码讲解。") + "</p>";
+      var changes = review.mainChanges || review.implementationSummary || [];
+      if (changes.length) {
+        html += "<h3>主要修改</h3><ul>" + changes.slice(0, 8).map(function(item) { return "<li>" + h(item) + "</li>"; }).join("") + "</ul>";
+      }
+      return html;
+    }
+
+    function dominantCodeStatus(item) {
+      if (item.codeStatus) return item.codeStatus;
+      var counts = item.statusCounts || {};
+      if (counts.current) return "current";
+      if (counts.stale) return "stale";
+      if (counts.reverted) return "reverted";
+      return "unknown";
+    }
+
+    function formatCodeStatus(status) {
+      var map = { current: "当前代码", stale: "历史版本", reverted: "已回滚", unknown: "未知状态" };
+      return map[status] || status || "未知状态";
+    }
+
+    function formatRequirementStatus(status) {
+      var map = { active: "进行中", paused: "暂停", done: "已完成", unscoped: "未归档" };
+      return map[status] || status || "未归档";
+    }
+
+    function formatDate(value) {
+      if (!value) return "刚刚";
+      var date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function dayLabel(value) {
+      if (!value) return "今天";
+      var date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "今天";
+      var today = new Date();
+      var dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+      var targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      if (targetStart === dayStart) return "今天";
+      if (targetStart === dayStart - 86400000) return "昨天";
+      return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+    }
+
+    function timeLabel(value) {
+      if (!value) return "";
+      var date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function shortPath(value) {
+      if (!value) return "当前项目";
+      var parts = String(value).split("/");
+      return parts[parts.length - 1] || value;
+    }
+
+    function capitalize(value) {
+      return value.slice(0, 1).toUpperCase() + value.slice(1);
+    }
+
+    function terminalIcon() {
+      return "<svg fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'/></svg>";
+    }
+
+    function showToast(message) {
+      var box = document.getElementById("toast");
+      var item = document.createElement("div");
+      item.className = "toast-item";
+      item.textContent = message;
+      box.appendChild(item);
+      setTimeout(function() {
+        item.remove();
+      }, 3200);
+    }
+
+    function h(value) {
+      return String(value === undefined || value === null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function attr(value) {
+      return h(value);
+    }
+  </script>
+</body>
 </html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

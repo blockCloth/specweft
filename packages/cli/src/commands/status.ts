@@ -17,6 +17,11 @@ function formatStatus(status: ProjectStatus): string {
         `画像文件：${status.profilePath}`,
         `记忆文件：${status.memoryPath}`,
         "",
+        "Agent 工作台就绪度：",
+        `- 分数：${status.readiness.score}%`,
+        `- 摘要：${status.readiness.summary}`,
+        ...status.readiness.items.map(formatReadinessItem),
+        "",
         "需求记忆保护：",
         `- ${status.memoryProtection.summary}`,
         `- 密钥变量：${status.memoryProtection.keyEnv}`,
@@ -32,4 +37,12 @@ function formatStatus(status: ProjectStatus): string {
         "MCP：",
         status.mcps.length ? status.mcps.map((mcp) => `- ${mcp}`).join("\n") : "- 暂无推荐或启用 MCP",
     ].join("\n");
+}
+
+function formatReadinessItem(item: ProjectStatus["readiness"]["items"][number]): string {
+    const statusText = item.status === "ready" ? "已就绪" : "需处理";
+    const toolText = item.agentTools.length ? `；Agent 工具：${item.agentTools.join(", ")}` : "";
+    const commandText = item.commands.length ? `；验证命令：${item.commands.join(" / ")}` : "";
+    const nextStepText = item.nextSteps.length ? `；下一步：${item.nextSteps[0]}` : "";
+    return `- [${statusText}] ${item.title}：${item.action}${nextStepText}${toolText}${commandText}`;
 }

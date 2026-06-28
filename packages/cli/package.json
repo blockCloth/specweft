@@ -1,7 +1,7 @@
 {
   "name": "specweft",
   "version": "0.1.1",
-  "description": "Local companion CLI and MCP server for Codex, Claude, and other coding agents.",
+  "description": "Local context, review, memory, and Skill workflow layer for Codex, Claude, and other coding agents.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -21,6 +21,8 @@
     "mcp",
     "codex",
     "claude",
+    "skills",
+    "context",
     "code-review",
     "memory"
   ],

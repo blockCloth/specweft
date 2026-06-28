@@ -37,10 +37,11 @@ export function createAgentWorkflowText(): string {
     "推荐工作流:",
     "1. 新线程开始时调用 specweft.bootstrap_session。",
     "2. 用户提出代码需求后，先调用 specweft.prepare_task。",
-    "3. 如命中历史需求，只调用 specweft.restore_requirement 恢复相关记忆。",
-    "4. 修改前用 prepare_task.guardrail.startWorkSegmentInput 调用 specweft.start_work_segment，给本次需求留下边界。",
-    "5. 修改后用 prepare_task.guardrail.recordCurrentDiffInput 调用 specweft.record_current_diff，再用 agentReview.suggestedAgentResponse 回复用户。",
-    "6. MCP/Skill 推荐只作为候选，遇到凭证、数据库、网络权限时必须让用户确认。",
+    "3. 只在 prepare_task.skillContext.allowedSkillIds 允许时，用 specweft.read_skill_detail 按需读取 Skill 正文。",
+    "4. 如命中历史需求，只调用 specweft.restore_requirement 恢复相关记忆。",
+    "5. 修改前用 prepare_task.guardrail.startWorkSegmentInput 调用 specweft.start_work_segment，给本次需求留下边界。",
+    "6. 修改后用 prepare_task.guardrail.recordCurrentDiffInput 调用 specweft.record_current_diff，再用 agentReview.suggestedAgentResponse 回复用户。",
+    "7. MCP/Skill 推荐只作为候选，遇到凭证、数据库、网络权限时必须让用户确认。",
   ].join("\n");
 }
 

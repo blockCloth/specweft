@@ -4,6 +4,7 @@ import type { ProjectStatus } from "../schemas/types.js";
 import { recommendForProject } from "../recommendations/recommender.js";
 import { scanProject } from "../scanner/project-scanner.js";
 import { getMemoryProtectionStatus } from "../security/memory-protection.js";
+import { createProjectReadiness } from "./project-readiness.js";
 
 
 export async function currentProjectStatus(rootPath: string): Promise<ProjectStatus> {
@@ -13,7 +14,10 @@ export async function currentProjectStatus(rootPath: string): Promise<ProjectSta
     const configDir = projectConfigDir(repoPath);
     const profilePath = path.join(configDir, "profile.json");
     const memoryPath = path.join(configDir, "memory.json");
-    const memoryProtection = await getMemoryProtectionStatus(repoPath);
+    const [memoryProtection, readiness] = await Promise.all([
+        getMemoryProtectionStatus(repoPath),
+        createProjectReadiness(repoPath),
+    ]);
 
 
     return {
@@ -25,6 +29,7 @@ export async function currentProjectStatus(rootPath: string): Promise<ProjectSta
         mcps: recommendations.filter((item) => item.type === "mcp")
             .map((item) => item.name),
         skills: recommendations.filter((item) => item.type === "skill")
-            .map((item) => item.name)
+            .map((item) => item.name),
+        readiness
     };
 }

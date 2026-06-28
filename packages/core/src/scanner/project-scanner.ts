@@ -5,6 +5,7 @@ import type { ProjectProfile } from "../schemas/types.js";
 import { projectConfigDir, toPosixPath } from "../utils/path.js";
 import { readJsonFile, writeJsonFile } from "../utils/json.js";
 import { readSecureJsonFile, writeSecureJsonFile } from "../security/secure-json.js";
+import { ensureProjectSettings } from "../settings/project-settings.js";
 
 const IGNORED_DIRS = new Set([
   ".git",
@@ -31,6 +32,7 @@ export async function initializeProject(repoPath: string): Promise<ProjectProfil
   await ensureJsonFile(path.join(configDir, "mcp.json"), { version: 1, selected: [] });
   await ensureJsonFile(path.join(configDir, "skills.json"), { version: 1, selected: [] });
   await ensureSecureJsonFile(path.join(configDir, "memory.json"), { sessions: [] });
+  await ensureProjectSettings(repoPath);
 
   return profile;
 }

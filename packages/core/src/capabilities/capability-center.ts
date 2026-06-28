@@ -27,7 +27,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
   {
     id: "cli-ripgrep",
     name: "ripgrep",
-    description: "Fast local code search for large repositories.",
+    description: "本地代码搜索工具，适合在大仓库里快速定位入口文件。",
     installCommand: "brew install ripgrep",
     runCommand: "rg <pattern>",
     permissions: ["filesystem:read"],
@@ -36,15 +36,15 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     tags: ["search", "codebase", "local"],
     match: (profile) => {
       if (profile.languages.length === 0) {
-        return "Useful as a safe default for exploring unknown repositories before editing.";
+        return "适合作为默认安全搜索工具：编辑前先定位文件，避免让 Agent 盲读整个仓库。";
       }
-      return `Useful for ${profile.name}: lets agents search ${profile.languages.join("/")} code without broad file reads.`;
+      return `适合 ${profile.name}：可以搜索 ${profile.languages.join("/")} 代码，减少大范围读取文件。`;
     },
   },
   {
     id: "cli-playwright",
     name: "Playwright CLI",
-    description: "Browser automation and UI verification for frontend projects.",
+    description: "浏览器自动化与前端页面验证工具。",
     installCommand: "pnpm add -D @playwright/test",
     runCommand: "pnpm exec playwright test",
     permissions: ["browser", "filesystem:read", "filesystem:write"],
@@ -53,7 +53,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     tags: ["browser", "frontend", "test"],
     match: (profile) => {
       if (hasAny(profile.frameworks, ["react", "vite", "next"])) {
-        return `Recommended because ${profile.name} uses ${profile.frameworks.join("/")}, so UI changes need browser-level verification.`;
+        return `适合 ${profile.name}：检测到 ${profile.frameworks.join("/")}，UI 改动需要浏览器级验证。`;
       }
       return undefined;
     },
@@ -61,7 +61,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
   {
     id: "cli-vitest",
     name: "Vitest",
-    description: "Fast JavaScript/TypeScript unit test runner.",
+    description: "JavaScript / TypeScript 项目的轻量单元测试工具。",
     installCommand: "pnpm add -D vitest",
     runCommand: "pnpm exec vitest run",
     permissions: ["filesystem:read"],
@@ -71,8 +71,8 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     match: (profile) => {
       if (hasAny(profile.languages, ["typescript", "javascript"])) {
         return profile.testCommands.length
-          ? `Matches existing test workflow: ${profile.testCommands.join("; ")}.`
-          : "Recommended because this JavaScript/TypeScript project has no detected test command yet.";
+          ? `匹配当前测试工作流：${profile.testCommands.join("; ")}。`
+          : "当前 JavaScript / TypeScript 项目暂未检测到测试命令，可用它补一个最小验证入口。";
       }
       return undefined;
     },
@@ -80,7 +80,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
   {
     id: "cli-eslint",
     name: "ESLint",
-    description: "Static analysis for JavaScript and TypeScript projects.",
+    description: "JavaScript / TypeScript 项目的静态检查工具。",
     installCommand: "pnpm add -D eslint",
     runCommand: "pnpm exec eslint .",
     permissions: ["filesystem:read"],
@@ -89,7 +89,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     tags: ["lint", "typescript", "javascript"],
     match: (profile) => {
       if (hasAny(profile.languages, ["typescript", "javascript"])) {
-        return "Recommended for catching basic code quality issues before asking an AI agent to explain or extend changes.";
+        return "适合在 AI 继续改动或生成讲解前，先捕获基础代码质量问题。";
       }
       return undefined;
     },
@@ -97,7 +97,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
   {
     id: "cli-gh",
     name: "GitHub CLI",
-    description: "GitHub pull request, issue, and workflow access from the terminal.",
+    description: "从终端读取 GitHub PR、Issue 和工作流信息。",
     installCommand: "brew install gh",
     runCommand: "gh status",
     permissions: ["network", "github"],
@@ -106,7 +106,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     tags: ["github", "review", "workflow"],
     match: (profile) => {
       if (profile.ruleFiles.length > 0) {
-        return "Useful when local agent rules need to be cross-checked with pull requests or issue context.";
+        return "适合把本地 Agent 规则和 PR / Issue 上下文交叉检查。";
       }
       return undefined;
     },
@@ -114,7 +114,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
   {
     id: "cli-docker",
     name: "Docker CLI",
-    description: "Container runtime used for local services and integration checks.",
+    description: "用于本地服务和集成检查的容器运行环境。",
     installCommand: "Install Docker Desktop",
     runCommand: "docker compose ps",
     permissions: ["containers", "filesystem:read", "network"],
@@ -123,7 +123,7 @@ const BUILTIN_CLI_CAPABILITIES: CliCapabilityTemplate[] = [
     tags: ["docker", "infra", "integration"],
     match: (profile) => {
       if (profile.rootPath && profile.frameworks.includes("python-project")) {
-        return "Useful for Python service projects that often depend on local databases or infrastructure services.";
+        return "适合依赖本地数据库或基础设施服务的 Python 项目。";
       }
       return undefined;
     },
@@ -237,28 +237,28 @@ function mapSelectionStatus(
 
 function createMcpReason(id: string, profile: ProjectProfile): string | undefined {
   if (id === "filesystem") {
-    return `Recommended for ${profile.name}: gives agents scoped project file context before planning changes.`;
+    return `适合 ${profile.name}：让 Agent 在规划修改前读取受限的项目文件上下文。`;
   }
   if (id === "git") {
-    return "Recommended for code review: diff and history context are core to explaining AI-generated changes.";
+    return "适合代码讲解：diff 和历史上下文是解释 AI 改动的核心依据。";
   }
   if (id.startsWith("marketplace-")) {
-    return "Available from the MCP marketplace pool. Review permissions before enabling it for this project.";
+    return "来自 MCP 市场池。启用前需要先确认权限和环境变量，不建议默认安装。";
   }
   return undefined;
 }
 
 function createSkillReason(id: string, profile: ProjectProfile): string | undefined {
   if (id === "diff-explainer") {
-    return "Recommended because SpecWeft's review loop needs clear explanations of code changes.";
+    return "适合 SpecWeft 的 Review 闭环：每次 AI 改完代码后，需要生成清晰的修改讲解。";
   }
   if (id === "test-planner") {
     return profile.testCommands.length
-      ? `Recommended because the project exposes test command(s): ${profile.testCommands.join("; ")}.`
-      : "Recommended to help choose a small verification path when no test command is detected.";
+      ? `适合当前项目的测试入口：${profile.testCommands.join("; ")}。`
+      : "暂未检测到测试命令，可用于选择一个小范围验证路径。";
   }
   if (id.startsWith("marketplace-")) {
-    return "Available from the Skill marketplace pool. Compare it with local rules before enabling.";
+    return "来自 Skill 市场池。启用前应先和本地规则对照，避免覆盖项目规范。";
   }
   return undefined;
 }

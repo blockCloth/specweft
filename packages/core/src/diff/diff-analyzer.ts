@@ -26,8 +26,10 @@ import { projectConfigDir } from "../utils/path.js";
 import { createGitChangeSnapshot } from "../git/change-snapshot.js";
 import { enhanceReviewWithLlm } from "../review/llm-review.js";
 import { completeWorkSegment, getActiveWorkSegment } from "../work-segments/work-segment-manager.js";
+import { isIgnoredByProjectSettings, readProjectSettings } from "../settings/project-settings.js";
 
 const execFileAsync = promisify(execFile);
+const MAIN_CHAIN_FILE_LIMIT = 3;
 
 type ReviewDraftContext = {
   title?: string;
@@ -182,7 +184,12 @@ const BLOCK_KIND_LABELS: Record<ReviewRequirementBlock["kind"], string> = {
 
 // 读取当前工作区未提交改动。后续可扩展 include staged / unstaged 两种模式。
 export async function analyzeCurrentDiff(repoPath: string): Promise<DiffSummary> {
-  const diffText = await runGit(repoPath, ["diff", "HEAD", "--stat", "--patch", "--", ".", ":(exclude).specweft"]);
+  const settings = await readProjectSettings(repoPath);
+  const excludeArgs = [
+    ":(exclude).specweft",
+    ...settings.contextMemory.ignorePaths.map((ignorePath) => `:(exclude)${ignorePath}`),
+  ];
+  const diffText = await runGit(repoPath, ["diff", "HEAD", "--stat", "--patch", "--", ".", ...excludeArgs]);
   const changedFiles = await collectChangedFiles(repoPath, diffText);
   const snapshot = await createGitChangeSnapshot(repoPath, diffText, changedFiles);
 
@@ -200,9 +207,10 @@ export async function analyzeCurrentDiff(repoPath: string): Promise<DiffSummary>
 }
 
 async function collectChangedFiles(repoPath: string, diffText: string): Promise<DiffFileChange[]> {
+  const settings = await readProjectSettings(repoPath);
   const files = new Map<string, DiffFileChange>();
 
-  for (const file of parseChangedFiles(diffText).filter((file) => shouldIncludeDiffFile(file.path))) {
+  for (const file of parseChangedFiles(diffText).filter((file) => shouldIncludeDiffFile(file.path, settings))) {
     files.set(file.path, file);
   }
 
@@ -271,9 +279,10 @@ export function createReviewDraft(diff: DiffSummary, context: ReviewDraftContext
     hasDocs,
   });
   const sourceReadingGuide = createSourceReadingGuide(diff);
+  const mainChainFiles = selectMainChainFiles(diff.changedFiles, changeGroups, MAIN_CHAIN_FILE_LIMIT);
   const reviewWalkthrough = [
     ...workSegmentNotes,
-    ...createReviewWalkthrough(diff.changedFiles),
+    ...createReviewWalkthrough(mainChainFiles, diff.changedFiles.length),
   ];
   const risks = [
     ...workSegmentRisk,
@@ -301,7 +310,7 @@ export function createReviewDraft(diff: DiffSummary, context: ReviewDraftContext
     requirementBlocks,
     changeGroups,
     implementationSummary,
-    mainChanges: diff.changedFiles.map((file) => describeFileChange(file)),
+    mainChanges: createMainChainChanges(mainChainFiles, diff.changedFiles.length),
     sourceReadingGuide,
     reviewWalkthrough,
     impactAreas,
@@ -340,6 +349,7 @@ export async function createReviewReport(
     listRequirements(repoPath),
     createMemoryDigest(repoPath, profile),
   ]);
+  const settings = await readProjectSettings(repoPath);
   const requirement = await resolveRequirementForReview(
     repoPath,
     {
@@ -378,7 +388,7 @@ export async function createReviewReport(
       reviewPath: reportPath,
       nextThreadPrompt: review.nextThreadPrompt,
     },
-    ttlDays,
+    ttlDays ?? settings.changeRecording.retentionDays,
   );
   const updatedRequirement = await attachReviewToRequirement(repoPath, requirement.id, {
     reviewPath: reportPath,
@@ -433,7 +443,9 @@ export function createAgentReviewPacket(input: {
         }
       : undefined,
     digest: input.review.reviewDigest,
-    changedFiles: input.diff.changedFiles.map((file) => file.path).slice(0, 12),
+    changedFiles: input.review.reviewDigest.readingPath.length > 0
+      ? input.review.reviewDigest.readingPath.map((item) => item.path)
+      : selectMainChainFiles(input.diff.changedFiles, input.review.changeGroups, MAIN_CHAIN_FILE_LIMIT).map((file) => file.path),
     sourceReading,
     suggestedAgentResponse: createSuggestedAgentReviewResponse(input.review.reviewDigest, input.reportPath),
     nextActions: createAgentReviewNextActions(input.review),
@@ -522,13 +534,14 @@ function createDraftSummary(diff: DiffSummary): string {
 }
 
 async function parseUntrackedFiles(repoPath: string): Promise<DiffFileChange[]> {
+  const settings = await readProjectSettings(repoPath);
   const statusText = await runGit(repoPath, ["status", "--porcelain=v1", "--untracked-files=all"]);
   const filePaths = statusText
     .split("\n")
     .map((line) => line.trimEnd())
     .filter((line) => line.startsWith("?? "))
     .map((line) => line.slice(3).trim())
-    .filter((filePath) => Boolean(filePath) && shouldIncludeDiffFile(filePath));
+    .filter((filePath) => Boolean(filePath) && shouldIncludeDiffFile(filePath, settings));
 
   return Promise.all(
     filePaths.map(async (filePath) => ({
@@ -540,8 +553,8 @@ async function parseUntrackedFiles(repoPath: string): Promise<DiffFileChange[]> 
   );
 }
 
-function shouldIncludeDiffFile(filePath: string): boolean {
-  return !filePath.startsWith(".specweft/");
+function shouldIncludeDiffFile(filePath: string, settings: Awaited<ReturnType<typeof readProjectSettings>>): boolean {
+  return !filePath.startsWith(".specweft/") && !isIgnoredByProjectSettings(filePath, settings);
 }
 
 async function countFileLines(filePath: string): Promise<number> {
@@ -845,12 +858,12 @@ function createReviewDigest(input: {
       input.changeGroups,
       input.activeWorkSegment,
     ),
-    oneLineSummary: createDigestOneLineSummary(input.title, input.diff, input.requirementBlocks, input.changeGroups, input.summary),
+    oneLineSummary: createDigestOneLineSummary(input.title, input.requirementBlocks, input.changeGroups, input.summary),
     sections,
     whyChanged: createDigestWhyChanged(input.title, input.requirementBlocks, input.changeGroups, input.activeWorkSegment),
     implementationPath: createDigestImplementationPath(input.implementationSummary, input.changeGroups),
     readingPath,
-    reviewNotes: createDigestReviewNotes(input.reviewWalkthrough, input.risks, input.changeGroups),
+    reviewNotes: createDigestReviewNotes(input.risks, input.changeGroups),
     validation: createDigestValidation(input.testSuggestions, input.risks),
     confidence: confidence.confidence,
     confidenceReasons: confidence.confidenceReasons,
@@ -931,7 +944,6 @@ function createDigestRequirementContext(
 
 function createDigestOneLineSummary(
   title: string | undefined,
-  diff: DiffSummary,
   blocks: ReviewRequirementBlock[],
   groups: ReviewChangeGroup[],
   summary: string,
@@ -1041,7 +1053,7 @@ function createDigestReadingPath(
   const used = new Set<string>();
   const items: ReviewDraft["reviewDigest"]["readingPath"] = [];
 
-  for (const item of prioritizeDigestReadingGuide(sourceReadingGuide, groups)) {
+  for (const item of prioritizeDigestReadingGuide(sourceReadingGuide, groups).slice(0, MAIN_CHAIN_FILE_LIMIT)) {
     if (used.has(item.path)) {
       continue;
     }
@@ -1054,7 +1066,7 @@ function createDigestReadingPath(
     });
     used.add(item.path);
 
-    if (items.length >= 5) {
+    if (items.length >= MAIN_CHAIN_FILE_LIMIT) {
       break;
     }
   }
@@ -1066,12 +1078,13 @@ function prioritizeDigestReadingGuide(
   sourceReadingGuide: ReviewDraft["sourceReadingGuide"],
   groups: ReviewChangeGroup[],
 ): ReviewDraft["sourceReadingGuide"] {
-  const primaryGroupFiles = groups
-    .slice(0, 4)
-    .flatMap((group) => group.files)
-    .map((file) => file.path);
   const byPath = new Map(sourceReadingGuide.map((item) => [item.path, item]));
-  const prioritized = primaryGroupFiles
+  const selectedPaths = selectMainChainFiles(
+    groups.flatMap((group) => group.files),
+    groups,
+    MAIN_CHAIN_FILE_LIMIT,
+  ).map((file) => file.path);
+  const prioritized = selectedPaths
     .map((filePath) => byPath.get(filePath))
     .filter((item): item is ReviewDraft["sourceReadingGuide"][number] => item !== undefined);
 
@@ -1081,11 +1094,7 @@ function prioritizeDigestReadingGuide(
   ];
 }
 
-function createDigestReviewNotes(
-  reviewWalkthrough: string[],
-  risks: string[],
-  groups: ReviewChangeGroup[],
-): string[] {
+function createDigestReviewNotes(risks: string[], groups: ReviewChangeGroup[]): string[] {
   const notes = [
     ...groups.flatMap((group) => group.reviewNotes).slice(0, 4),
     ...risks.filter((risk) => !risk.includes("没有发现明显")).slice(0, 3),
@@ -2816,15 +2825,115 @@ function createSourceReadingGuide(diff: DiffSummary): ReviewDraft["sourceReading
     });
 }
 
-function createReviewWalkthrough(files: DiffFileChange[]): string[] {
-  return [...files]
-    .sort((left, right) => (right.additions + right.deletions) - (left.additions + left.deletions))
-    .slice(0, 6)
+function createMainChainChanges(files: DiffFileChange[], totalFileCount: number): string[] {
+  const changes = files.map((file, index) => {
+    const lead = index === 0 ? "主入口" : "配套入口";
+    return `${lead}：${describeFileChange(file)}`;
+  });
+  const hiddenCount = Math.max(0, totalFileCount - files.length);
+  if (hiddenCount > 0) {
+    changes.push(`另有 ${hiddenCount} 个配套文件已放入高级详情，默认讲解不逐个展开。`);
+  }
+
+  return changes;
+}
+
+function createReviewWalkthrough(files: DiffFileChange[], totalFileCount = files.length): string[] {
+  const walkthrough = [...files]
+    .slice(0, MAIN_CHAIN_FILE_LIMIT)
     .map((file, index) => {
       const area = detectFileArea(file.path);
       const prefix = index === 0 ? "先看" : "再看";
-      return `${prefix} ${file.path}: ${area}，+${file.additions}/-${file.deletions}。判断它是承载主要行为变化，还是只是配套支持。`;
+      return `${prefix} ${file.path}: ${area}，这是默认讲解中的主链路入口。`;
     });
+  const hiddenCount = Math.max(0, totalFileCount - files.length);
+  if (hiddenCount > 0) {
+    walkthrough.push(`其余 ${hiddenCount} 个配套文件只在高级详情中查看，先不要把它们当成阅读主线。`);
+  }
+
+  return walkthrough;
+}
+
+function selectMainChainFiles(
+  files: DiffFileChange[],
+  groups: ReviewChangeGroup[],
+  limit = MAIN_CHAIN_FILE_LIMIT,
+): DiffFileChange[] {
+  const byPath = new Map<string, DiffFileChange>();
+  for (const file of files) {
+    byPath.set(file.path, file);
+  }
+
+  const groupPrimaryFiles = [...groups]
+    .sort((left, right) => groupReviewPriority(right) - groupReviewPriority(left))
+    .flatMap((group) => rankMainChainFiles(group.files).slice(0, 1));
+  const rankedFiles = rankMainChainFiles([...byPath.values()]);
+  const selected: DiffFileChange[] = [];
+
+  for (const file of [...groupPrimaryFiles, ...rankedFiles]) {
+    if (selected.some((item) => item.path === file.path)) {
+      continue;
+    }
+    selected.push(file);
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected.length > 0 ? selected : rankedFiles.slice(0, limit);
+}
+
+function rankMainChainFiles(files: DiffFileChange[]): DiffFileChange[] {
+  return [...files].sort((left, right) => {
+    const scoreDelta = scoreMainChainFile(right) - scoreMainChainFile(left);
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
+
+    return (right.additions + right.deletions) - (left.additions + left.deletions);
+  });
+}
+
+function scoreMainChainFile(file: DiffFileChange): number {
+  let score = 0;
+  const area = detectFileArea(file.path);
+  const normalized = file.path.toLowerCase();
+
+  if (area === "runtime code") {
+    score += 80;
+  } else if (area === "test") {
+    score += 35;
+  } else if (area === "config") {
+    score += 24;
+  } else if (area === "docs") {
+    score += 12;
+  }
+
+  const functionalKey = detectFunctionalGroupKey(file.path);
+  if (functionalKey === "functional:web-ui" || functionalKey === "functional:review" || functionalKey === "functional:memory") {
+    score += 25;
+  } else if (functionalKey) {
+    score += 12;
+  }
+
+  if (/index\.(ts|tsx|js|jsx)$/.test(normalized) || /server\.(ts|js)$/.test(normalized)) {
+    score += 8;
+  }
+  if (/(__tests__|\.test\.|\.spec\.|\/docs\/|readme|lock|package-lock|pnpm-lock)/.test(normalized)) {
+    score -= 18;
+  }
+
+  return score;
+}
+
+function groupReviewPriority(group: ReviewChangeGroup): number {
+  const confidenceScore = group.confidence === "high" ? 12 : group.confidence === "medium" ? 6 : 0;
+  const areaScore = group.area === "web-ui" || group.area === "review" || group.area === "memory"
+    ? 10
+    : group.area.startsWith("requirement:")
+      ? 8
+      : 0;
+  return confidenceScore + areaScore + Math.min(12, groupDelta(group.files));
 }
 
 function createSourceReadingReason(file: DiffFileChange): string {
@@ -2915,13 +3024,13 @@ function createNextThreadPrompt(
   files: DiffFileChange[],
   areas: string[],
 ): string {
-  const changedFiles = files.map((file) => file.path).slice(0, 8).join(", ") || "none";
+  const changedFiles = rankMainChainFiles(files).slice(0, MAIN_CHAIN_FILE_LIMIT).map((file) => file.path).join(", ") || "none";
   const impactAreas = areas.slice(0, 6).join(", ") || "unknown";
   return [
     "从这条 SpecWeft 记忆继续。",
     summary,
     `影响范围：${impactAreas}。`,
-    `修改文件：${changedFiles}。`,
+    `主链路文件：${changedFiles}。`,
     "请先解释上一次修改，再检查当前 git diff 后继续推进。",
   ].join(" ");
 }

@@ -67,18 +67,18 @@ function createSkillReason(id: string, profile: ProjectProfile): string | undefi
 
   if (id === "diff-explainer") {
     return [
-      `Fits ${projectText} because SpecWeft's main workflow is explaining AI-generated diffs after each coding session.`,
+      `适合 ${projectText}：SpecWeft 的主流程是在每次 AI 改完代码后生成可读讲解和 review 清单。`,
       hasRules
-        ? `It should reference local rule file(s) first: ${profile.ruleFiles.join(", ")}.`
-        : "No local rule file was detected, so the explanation should stay descriptive instead of inventing project conventions.",
+        ? `使用时先参考本地规则文件：${profile.ruleFiles.join(", ")}。`
+        : "未检测到本地规则文件，讲解应保持描述性，不要编造项目规范。",
     ].join(" ");
   }
   if (id === "test-planner") {
     return [
       hasTests
-        ? `Use existing test command(s) as the verification base: ${profile.testCommands.join("; ")}.`
-        : "No test command was detected yet, so it should suggest the smallest practical verification path from changed files.",
-      `This helps review AI changes in ${projectText} without running unrelated broad checks first.`,
+        ? `以现有测试命令作为验证基础：${profile.testCommands.join("; ")}。`
+        : "暂未检测到测试命令，应根据改动文件给出最小可行验证路径。",
+      `这样可以先验证 ${projectText} 的相关改动，避免一上来跑过宽的检查。`,
     ].join(" ");
   }
   return undefined;
@@ -93,16 +93,16 @@ function createMcpReason(
 
   if (id === "filesystem") {
     return [
-      `Useful for ${projectText}: lets the agent read project files that explain local structure before recommending Skills or writing review notes.`,
-      "Keep it scoped to the current repository path when assembling runtime config.",
+      `适合 ${projectText}：允许 Agent 在推荐 Skill 或生成讲解前读取项目文件，理解本地结构。`,
+      "装配运行时配置时应限制在当前仓库路径内。",
     ].join(" ");
   }
   if (id === "git") {
     return [
-      "Core to SpecWeft's review loop: it can inspect diffs, changed files, branches, and recent history before producing the code-change explanation.",
+      "这是 SpecWeft review 闭环的核心能力：生成代码讲解前可以检查 diff、改动文件、分支和近期历史。",
       profile.buildCommands.length
-        ? `Pair it with build command awareness: ${profile.buildCommands.join("; ")}.`
-        : "No build command was detected, so diff review becomes the first lightweight safety signal.",
+        ? `建议结合构建命令理解验证边界：${profile.buildCommands.join("; ")}。`
+        : "未检测到构建命令，因此 diff review 会成为第一层轻量安全信号。",
     ].join(" ");
   }
   if (id.startsWith("marketplace-")) {
@@ -112,8 +112,8 @@ function createMcpReason(
     ].join("; ");
 
     return [
-      `Marketplace MCP already exists in the SpecWeft pool and may support ${projectText}.`,
-      `Review before enabling because it declares ${riskText}.`,
+      `这个市场 MCP 已在 SpecWeft 池中，可能支持 ${projectText}。`,
+      `启用前需要人工确认，因为它声明了 ${riskText}。`,
     ].join(" ");
   }
   return undefined;
@@ -121,6 +121,6 @@ function createMcpReason(
 
 function createProjectText(profile: ProjectProfile): string {
   const languages = profile.languages.length ? profile.languages.join("/") : "unknown-language";
-  const frameworks = profile.frameworks.length ? ` with ${profile.frameworks.join("/")}` : "";
+  const frameworks = profile.frameworks.length ? `，框架：${profile.frameworks.join("/")}` : "";
   return `${profile.name} (${languages}${frameworks})`;
 }

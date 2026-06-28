@@ -12,6 +12,109 @@ export type ProjectProfile = {
   updatedAt: string;
 };
 
+export type CompressionStrategy = "summary" | "sliding-window" | "none";
+
+export type ProjectSettings = {
+  version: number;
+  changeRecording: {
+    autoRecordDiff: boolean;
+    autoLinkRequirement: boolean;
+    retentionDays: number;
+  };
+  contextMemory: {
+    maxRetainedTurns: number;
+    compressionStrategy: CompressionStrategy;
+    ignorePaths: string[];
+  };
+  capabilities: {
+    skillRegistryUrl: string;
+    autoCheckSkillUpdates: boolean;
+    mcpStdioTimeoutMs: number;
+  };
+  updatedAt: string;
+};
+
+export type ProjectSettingsPatch = {
+  changeRecording?: Partial<ProjectSettings["changeRecording"]>;
+  contextMemory?: Partial<ProjectSettings["contextMemory"]>;
+  capabilities?: Partial<ProjectSettings["capabilities"]>;
+};
+
+export type AgentActivityKind =
+  | "bootstrap_session"
+  | "prepare_task"
+  | "restore_requirement"
+  | "start_work_segment"
+  | "complete_work_segment"
+  | "review_current_diff"
+  | "record_current_diff"
+  | "recommend_skills"
+  | "recommend_tools"
+  | "apply_skill"
+  | "apply_mcp"
+  | "install_skill"
+  | "install_mcp"
+  | "settings_updated"
+  | "requirement_created"
+  | "requirement_selected"
+  | "project_registered"
+  | "project_selected"
+  | "memory_recalled"
+  | "memory_handoff"
+  | "system";
+
+export type AgentActivitySource = "web" | "mcp" | "cli" | "system";
+
+export type AgentActivityStatus = "success" | "attention" | "error";
+
+export type AgentActivityEvent = {
+  id: string;
+  repoPath: string;
+  kind: AgentActivityKind;
+  source: AgentActivitySource;
+  status: AgentActivityStatus;
+  title: string;
+  summary: string;
+  toolName?: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  target?: string;
+  metadata: Record<string, string | number | boolean>;
+  createdAt: string;
+};
+
+export type AgentActivityLog = {
+  version: number;
+  generatedAt: string;
+  events: AgentActivityEvent[];
+  summary: {
+    total: number;
+    success: number;
+    attention: number;
+    error: number;
+    lastEventAt?: string;
+  };
+};
+
+export type MemoryCompressionRecord = {
+  id: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  strategy: CompressionStrategy;
+  sourceSessionCount: number;
+  retainedSessionCount: number;
+  omittedSessionCount: number;
+  summary: string;
+  keywords: string[];
+  keyFiles: string[];
+  createdAt: string;
+};
+
+export type MemoryCompressionFile = {
+  version: number;
+  records: MemoryCompressionRecord[];
+};
+
 export type RecommendationRisk = "low" | "medium" | "high";
 
 export type CapabilityKind = "mcp" | "skill" | "cli" | "hook";
@@ -97,6 +200,30 @@ export type MarketplaceSkillPreview = {
   skill: MarketplaceSkill;
   content: string;
   contentSource: string;
+};
+
+export type SkillUpdateStatus = "current" | "update-available" | "unknown" | "skipped";
+
+export type SkillUpdateItem = {
+  id: string;
+  name: string;
+  source: PoolSource;
+  status: SkillUpdateStatus;
+  currentUpdatedAt?: string;
+  latestUpdatedAt?: string;
+  latestGithubUrl?: string;
+  reason: string;
+};
+
+export type SkillUpdateCheck = {
+  enabled: boolean;
+  registryUrl: string;
+  generatedAt: string;
+  checkedCount: number;
+  updateCount: number;
+  skippedCount: number;
+  items: SkillUpdateItem[];
+  warnings: string[];
 };
 
 export type MarketplaceMcp = {
@@ -576,6 +703,10 @@ export type MemoryDigestItem = {
   requirementTitle?: string;
   title: string;
   latestSummary: string;
+  compressedSummary?: string;
+  compressionCount: number;
+  retainedSessionCount: number;
+  omittedSessionCount: number;
   keywords: string[];
   keyFiles: string[];
   sessionCount: number;
@@ -588,8 +719,14 @@ export type MemoryDigest = {
   projectId: string;
   projectName: string;
   generatedAt: string;
+  settings: {
+    maxRetainedTurns: number;
+    compressionStrategy: CompressionStrategy;
+    ignorePaths: string[];
+  };
   totalMemories: number;
   totalThreads: number;
+  totalCompressionCount: number;
   items: MemoryDigestItem[];
   summary: string;
 };
@@ -598,6 +735,7 @@ export type RequirementRestore = {
   requirement?: RequirementRecord;
   sessions: SessionMemory[];
   handoff: MemoryHandoff;
+  compression?: MemoryCompressionRecord;
   summary: string;
 };
 
@@ -632,6 +770,13 @@ export type TaskSkillSuggestion = {
   localRuleNote: string;
   conflictRisk: RecommendationRisk;
   status: "recommended" | "enabled" | "disabled" | "ignored";
+  loadPolicy: SkillContextLoadPolicy;
+  selectionRevision: string;
+  staleIfRevisionChanges: boolean;
+  detailToolInput?: {
+    skillId: string;
+    selectionRevision: string;
+  };
 };
 
 export type TaskMemorySuggestion = {
@@ -693,6 +838,7 @@ export type PreparedTask = {
   codePointers: TaskCodePointer[];
   matchedRequirement: PreparedTaskRequirementMatch | null;
   skillSuggestions: TaskSkillSuggestion[];
+  skillContext: SkillContextIndex;
   memorySuggestions: TaskMemorySuggestion[];
   memoryIndex: MemoryIndex;
   executionPlan: TaskExecutionStep[];
@@ -705,6 +851,7 @@ export type BootstrapSession = {
   projectName: string;
   generatedAt: string;
   profile: ProjectProfile;
+  settings: ProjectSettings;
   recommendations: ToolRecommendation[];
   capabilityCenter: CapabilityCenter;
   assembly: RuntimeAssembly;
@@ -734,6 +881,72 @@ export type AgentHarnessResult = {
   commandNames: string[];
 };
 
+export type AgentConnectionClient = {
+  client: AgentHarnessClient;
+  label: string;
+  files: AgentHarnessFile[];
+  setupCommand: string;
+  verificationCommands: string[];
+  configFormat: "toml" | "json" | "local-files";
+  configSnippet?: string;
+};
+
+export type AgentConnectionStep = {
+  phase: string;
+  trigger: string;
+  mcpTools: string[];
+  userBenefit: string;
+};
+
+export type AgentConnectionPackage = {
+  repoPath: string;
+  projectName: string;
+  generatedAt: string;
+  server: {
+    name: string;
+    transport: "stdio";
+    command: string;
+    args: string[];
+    toolCount: number;
+  };
+  clients: AgentConnectionClient[];
+  autoUseFlow: AgentConnectionStep[];
+  requiredTools: string[];
+  verificationCommands: string[];
+  notes: string[];
+};
+
+export type ProjectReadinessStatus = "ready" | "attention";
+
+export type ProjectReadinessItem = {
+  id: "agent-connection" | "skill-path" | "change-review" | "memory-entry";
+  title: string;
+  status: ProjectReadinessStatus;
+  summary: string;
+  action: string;
+  target: "connect" | "tools" | "review" | "memory" | "settings";
+  signals: string[];
+  nextSteps: string[];
+  agentTools: string[];
+  commands: string[];
+  uiAction: {
+    label: string;
+    target: "connect" | "tools" | "review" | "memory" | "settings" | "overview";
+    focusTarget?: string;
+  };
+};
+
+export type ProjectReadiness = {
+  repoPath: string;
+  projectName: string;
+  generatedAt: string;
+  score: number;
+  readyCount: number;
+  attentionCount: number;
+  summary: string;
+  items: ProjectReadinessItem[];
+};
+
 export type SpecWeftInitResult = {
   repoPath: string;
   profile: ProjectProfile;
@@ -748,6 +961,28 @@ export type SpecWeftInitResult = {
   nextCommands: string[];
 };
 
+export type ConnectionDoctorCheck = {
+  id: string;
+  label: string;
+  ok: boolean;
+  severity: "error" | "warn";
+  detail: string;
+  fix?: string;
+};
+
+export type ConnectionDoctorReport = {
+  repoPath: string;
+  projectName: string;
+  generatedAt: string;
+  toolCount: number;
+  checks: ConnectionDoctorCheck[];
+  errors: number;
+  warnings: number;
+  ready: boolean;
+  summary: string;
+  nextSteps: string[];
+};
+
 export type ProjectStatus = {
   repoPath: string;
   profilePath: string;
@@ -756,10 +991,11 @@ export type ProjectStatus = {
   projectName: string;
   skills: string[];
   mcps: string[];
+  readiness: ProjectReadiness;
 };
 
 export type MemoryProtectionFileStatus = {
-  id: "memory" | "requirements" | "workSegments";
+  id: "memory" | "requirements" | "workSegments" | "agentActivity";
   label: string;
   path: string;
   exists: boolean;
@@ -841,11 +1077,74 @@ export type SkillRegistryItem = {
   source: PoolSource;
   tags: string[];
   risk: PoolRisk;
+  marketplace?: {
+    author: string;
+    githubUrl: string;
+    path: string;
+    branch: string;
+    updatedAt: string;
+    stars?: number;
+    forks?: number;
+  };
 };
 
 export type SkillDetail = {
   item: SkillRegistryItem;
   content: string;
+};
+
+export type SkillContextScope = "enabled" | "task" | "all";
+
+export type SkillContextLoadPolicy = "metadata-only" | "read-on-demand" | "blocked";
+
+export type SkillContextIndexItem = {
+  id: string;
+  name: string;
+  description: string;
+  source: PoolSource;
+  tags: string[];
+  risk: PoolRisk;
+  status: CapabilityStatus;
+  activationHints: string[];
+  loadPolicy: SkillContextLoadPolicy;
+  reason: string;
+};
+
+export type SkillContextPolicy = {
+  loadMode: "lazy";
+  requiresSelectionRevision: boolean;
+  maxAutoLoadedSkills: number;
+  invalidatesWhen: string[];
+  staleInstruction: string;
+};
+
+export type SkillContextIndex = {
+  repoPath: string;
+  generatedAt: string;
+  scope: SkillContextScope;
+  selectionRevision: string;
+  enabledSkillIds: string[];
+  disabledSkillIds: string[];
+  ignoredSkillIds: string[];
+  allowedSkillIds: string[];
+  metadataOnlySkillIds: string[];
+  blockedSkillIds: string[];
+  items: SkillContextIndexItem[];
+  policy: SkillContextPolicy;
+  summary: string;
+};
+
+export type SkillDetailAccessStatus = "ready" | "stale" | "blocked" | "missing";
+
+export type SkillDetailAccess = {
+  skillId: string;
+  status: SkillDetailAccessStatus;
+  currentSelectionRevision: string;
+  expectedSelectionRevision?: string;
+  item?: SkillRegistryItem;
+  content?: string;
+  reason: string;
+  guidance: string[];
 };
 
 export type PoolInitResult = {
@@ -879,6 +1178,7 @@ export type AssemblyMcpServer = {
   url?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
+  timeoutMs?: number;
 };
 
 export type AssemblySkill = {
@@ -889,4 +1189,5 @@ export type AssemblySkill = {
 export type RuntimeAssembly = {
   mcpServers: Record<string, AssemblyMcpServer>;
   skills: AssemblySkill[];
+  skillContext: SkillContextIndex;
 };

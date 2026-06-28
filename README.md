@@ -6,6 +6,7 @@ SpecWeft is a local context layer for coding agents such as Codex, Claude Code, 
 
 It focuses on the parts around the coding session:
 
+- project-local Agent Harness files
 - project profiling
 - task preparation before code edits
 - Skill routing for the current request
@@ -21,7 +22,9 @@ The goal is not to replace a coding agent. SpecWeft helps beginners describe a t
 
 ## Status
 
-This project is still early. The current version includes a working CLI, a local Web UI, core project storage, and an MCP server adapter.
+SpecWeft v0.1 is a usable local-first workflow for beginner-friendly agent coding. The current release includes the CLI, local Web UI, project storage, Agent Harness generation, MCP server adapter, task preparation, Skill routing, diff review, work segments, requirement memory, and optional marketplace candidates.
+
+The product line is intentionally narrow: SpecWeft does not replace Codex or Claude. It gives them a project-local context and review layer so each coding request can be prepared, explained, remembered, and restored.
 
 ## Features
 
@@ -49,6 +52,7 @@ This project is still early. The current version includes a working CLI, a local
 - Search marketplace Skill candidates from skillsmp
 - Install a marketplace Skill into the global Skill pool and enable it for a project after user action
 - Expose SpecWeft capabilities through an MCP server
+- Write project-local Agent Harness files for Codex and Claude Skills/Commands
 
 ## Quick Start
 
@@ -98,15 +102,25 @@ specweft status
 
 Options can be placed before or after the command, for example `specweft --repo . status` and `specweft status --repo .` are equivalent. `specweft start 4300` is also accepted as a short form of `specweft start --port 4300`.
 
-After `specweft init`, run `specweft setup-codex` or `specweft setup-claude` to print the MCP client config snippet. SpecWeft writes project agent instructions, but it does not silently edit global Codex or Claude settings.
+After `specweft init`, run `specweft setup-codex` or `specweft setup-claude` to print the MCP client config snippet. SpecWeft writes project agent instructions and Agent Harness templates, but it does not silently edit global Codex or Claude settings.
+
+```text
+.agents/skills/specweft-*/SKILL.md
+.codex/skills/specweft-*/SKILL.md
+.codex/prompts/specweft-*.md
+.claude/skills/specweft-*/SKILL.md
+.claude/commands/specweft/*.md
+```
+
+These Harness files do not reimplement SpecWeft. They tell Codex and Claude when to call the SpecWeft MCP tools, while the tested behavior stays in `@specweft/core`.
 The intended flow is:
 
 1. call `specweft.bootstrap_session` once at the beginning of a thread
 2. call `specweft.prepare_task` before planning or editing a user request
-3. call `specweft.start_work_segment` before editing so mixed diffs have a request boundary
+3. call `specweft.start_work_segment` with `prepare_task.guardrail.startWorkSegmentInput` before editing so mixed diffs have a request boundary
 4. call `specweft.get_memory_digest` first when continuing old work
 5. call `specweft.restore_requirement` only when the memory digest or memory index shows relevant history
-6. call `specweft.record_current_diff` after code changes; it closes the active work segment
+6. call `specweft.record_current_diff` with `prepare_task.guardrail.recordCurrentDiffInput` after code changes; it closes the active work segment
 
 For local development inside this repository:
 
@@ -123,19 +137,17 @@ pnpm run handoff
 
 ## Web UI
 
-The local UI includes:
+The local UI is organized around the beginner agent workflow:
 
-- Overview: project profile and enabled tool count
-- Work segments: active and recent request boundaries for uncommitted changes
-- Task preparation: clarified goal, execution plan, related files, recommended Skills, and relevant memory
-- Capability Center: MCP, Skill, and CLI recommendations with type filtering, permissions, and risk notes
-- Marketplace Skills: external Skill candidates, keyword search, conflict notes, and user-confirmed install
-- Advanced MCP marketplace: optional external MCP candidates, semantic search, risk notes, and user-confirmed install
-- Runtime: assembled MCP and Skill runtime config
-- Requirements: current requirement selection, creation, and scoped review history
-- Review: readable HTML review reports for the current diff, with requirement blocks, requirement-aware change groups, grouping reasons, source reading hints, risks, and test suggestions
-- Memory: requirement digest, timeline, recent session recall, and thread handoff
-- Connect: MCP client config, expected agent workflow, and LLM review config status
+- SpecWeft Workbench: one-screen task console for vague requirements, Codex / Claude auto-use status, project metrics, context budget, compression count, and next actions
+- Skill Router: Skill-first recommendation surface with local-rule priority, marketplace Skill preview, type filtering, and optional MCP candidates folded into advanced areas
+- Review Lens: readable change explanation focused on why the change exists, how it works, which files to read first, validation, and requirement-aware groups for mixed diffs
+- Memory Vault: requirement digest, scoped restore, new-thread handoff, timeline, memory protection, and work-segment state
+- Agent Bridge: Codex / Claude connection package, generated Harness entries, expected tool order, MCP client config summary, and advanced raw config snippets
+- Project Settings: recording policy, retention, context compression, ignored paths, Skill registry, and MCP timeout
+- Runtime Assembly: final Skill and optional MCP configuration that agents read through SpecWeft
+
+Raw JSON and long config snippets stay behind advanced sections. The default view is meant to be readable by someone who is still learning how Codex / Claude changed the project.
 
 ## MCP Server
 
@@ -260,9 +272,9 @@ pnpm publish:dry
 specweft start
 ```
 
-`pnpm publish:dry` builds, checks, tests, and creates npm tarballs for:
-
 `pnpm verify` also runs a lightweight Web UI smoke test against the built HTML, checking navigation/view contracts, API error-handling guards, and common runtime-regression signals.
+
+`pnpm publish:dry` builds, checks, tests, creates npm tarballs, and runs a release smoke test for:
 
 - `@specweft/core`
 - `@specweft/web`
@@ -287,10 +299,11 @@ pnpm --filter specweft publish
 
 ## Roadmap
 
-- Improve recommendation rules
-- Improve optional LLM-enhanced review explanations
-- Add import/export for MCP and Skill pools
-- Improve the Web UI for larger projects
+- tighten task-to-Skill matching with more project signals
+- improve optional LLM-enhanced review explanations while keeping the rule-based path usable without keys
+- add import/export for MCP and Skill pools
+- add larger-project ergonomics: filtering, saved views, and better requirement search
+- add team-friendly review and memory sharing only after the local-first workflow stays simple
 
 ## Optional LLM Review
 
@@ -300,7 +313,20 @@ SpecWeft review works without an API key. When these variables are present, it a
 export SPECWEFT_LLM_API_KEY="..."
 export SPECWEFT_LLM_MODEL="gpt-4.1-mini"
 export SPECWEFT_LLM_BASE_URL="https://api.openai.com/v1"
+export SPECWEFT_LLM_TIMEOUT_MS="15000"
 ```
+
+## Optional Memory Protection
+
+SpecWeft stores requirement memory locally under `.specweft/`. By default these files are plain JSON so beginners can inspect and debug them. If the memory contains sensitive product or business details, set a local key and migrate the memory state:
+
+```bash
+export SPECWEFT_MEMORY_KEY="use-a-long-local-key"
+specweft protect
+specweft protect --status
+```
+
+This encrypts `.specweft/memory.json`, `.specweft/requirements.json`, `.specweft/work-segments.json`, and `.specweft/agent-activity.json` with local AES-256-GCM storage. Codex or Claude sessions that read SpecWeft memory need the same environment variable. Markdown review reports remain plaintext in v1 so they are easy to open for human review.
 
 ## 中文
 
@@ -308,6 +334,7 @@ SpecWeft 是一个面向 Codex、Claude Code、Cursor 以及其他 MCP 兼容工
 
 它不负责替代 coding agent 写代码，而是整理写代码前后的上下文：
 
+- 项目级 Agent Harness 文件
 - 项目画像
 - 写代码前的任务准备
 - 根据当前需求推荐 Skills
@@ -322,7 +349,9 @@ SpecWeft 是一个面向 Codex、Claude Code、Cursor 以及其他 MCP 兼容工
 
 ## 当前状态
 
-项目还在早期阶段。目前已经有可用的 CLI、本地 Web UI、核心本地存储，以及 MCP Server 适配层。
+SpecWeft v0.1 已经形成可用的本地优先闭环：CLI、本地 Web UI、项目本地存储、Agent Harness 生成、MCP Server 适配、任务准备、Skill 路由、diff 讲解、工作段、需求记忆和可选市场候选都已经接入。
+
+产品边界仍然很明确：SpecWeft 不替代 Codex 或 Claude 写代码，而是给它们补上项目上下文、需求边界、修改讲解和可恢复记忆。
 
 ## 功能
 
@@ -351,6 +380,7 @@ SpecWeft 是一个面向 Codex、Claude Code、Cursor 以及其他 MCP 兼容工
 - 从 skillsmp 搜索市场 Skill 候选
 - 经用户确认后，把市场 Skill 加入全局 Skill 池并启用到当前项目
 - 通过 MCP Server 暴露 SpecWeft 能力
+- 为 Codex 和 Claude 写入项目级 Skills/Commands Harness 文件
 
 ## 快速开始
 
@@ -400,15 +430,25 @@ specweft status
 
 选项可以放在命令前或命令后，例如 `specweft --repo . status` 和 `specweft status --repo .` 等价。`specweft start 4300` 也可以作为 `specweft start --port 4300` 的简写。
 
-执行过 `specweft init` 后，再运行 `specweft setup-codex` 或 `specweft setup-claude` 输出 MCP 客户端配置片段。SpecWeft 会写入项目级 Agent 指令，但不会静默修改全局 Codex 或 Claude 配置。
+执行过 `specweft init` 后，再运行 `specweft setup-codex` 或 `specweft setup-claude` 输出 MCP 客户端配置片段。SpecWeft 会写入项目级 Agent 指令和 Agent Harness 模板，但不会静默修改全局 Codex 或 Claude 配置。
+
+```text
+.agents/skills/specweft-*/SKILL.md
+.codex/skills/specweft-*/SKILL.md
+.codex/prompts/specweft-*.md
+.claude/skills/specweft-*/SKILL.md
+.claude/commands/specweft/*.md
+```
+
+这些 Harness 文件不会重新实现 SpecWeft，只负责告诉 Codex/Claude 什么时候调用 SpecWeft MCP 工具；可测试的业务逻辑仍然保留在 `@specweft/core`。
 推荐流程是：
 
 1. 线程开始时调用一次 `specweft.bootstrap_session`
 2. 计划或修改用户需求前调用 `specweft.prepare_task`
-3. 修改前调用 `specweft.start_work_segment`，给本次需求留下工作段边界
+3. 修改前用 `prepare_task.guardrail.startWorkSegmentInput` 调用 `specweft.start_work_segment`，给本次需求留下工作段边界
 4. 延续旧需求时先调用 `specweft.get_memory_digest`
 5. 只有记忆摘要或记忆索引命中相关历史时，才调用 `specweft.restore_requirement`
-6. 修改完成后调用 `specweft.record_current_diff`，它会自动关闭当前工作段
+6. 修改完成后用 `prepare_task.guardrail.recordCurrentDiffInput` 调用 `specweft.record_current_diff`，它会自动关闭当前工作段
 
 如果是在本仓库内本地开发：
 
@@ -425,18 +465,17 @@ pnpm run handoff
 
 ## Web UI
 
-本地界面包含：
+本地界面按新手使用 Agent 的主流程组织：
 
-- 总览：项目画像和已启用工具数量
-- 任务准备：补全目标、执行路线、相关文件、推荐 Skills 和相关记忆
-- 能力中心：MCP / Skill / CLI 推荐、类型筛选、权限和风险提示
-- 市场 Skill：外部 Skill 候选、关键词搜索、冲突提示，以及用户确认后的加入启用
-- 高级 MCP 市场：可选外部 MCP 候选、需求语义搜索、风险提示，以及用户确认后的加入启用
-- 运行配置：当前项目的 MCP / Skill 组装结果
-- 需求：当前需求选择、新建需求，以及按需求归档代码讲解
-- 代码讲解：基于当前 diff 生成结构化中文说明和 HTML 报告，先展示需求拆解，再展示按历史需求或功能域拆出的改动分组、分组依据、源码查看方式、风险和测试建议
-- 记忆：需求摘要、需求时间线、关键词召回和线程交接
-- 接入配置：给 Codex 或 Claude Code 使用的 MCP 配置、Agent 调用顺序和 LLM 讲解配置状态
+- SpecWeft 工作台：一屏完成需求输入、Codex / Claude 无感调用状态、项目指标、上下文预算、压缩次数和下一步动作
+- Skill Router：以 Skill 为主线推荐能力，本地规范优先；市场 Skill 可预览后启用，MCP 候选默认放在高级区域
+- Review Lens：默认讲清楚为什么改、怎么实现、先读哪些文件、怎么验证；混合 diff 会按需求或功能域拆开
+- Memory Vault：需求摘要、按需恢复、新线程交接、时间线、记忆保护和工作段状态
+- Agent Bridge：Codex / Claude 接入包、生成的 Harness 入口、工具调用顺序、MCP 配置摘要，以及高级原始配置片段
+- 项目配置：修改记录策略、保留时间、上下文压缩、忽略路径、Skill 注册表和 MCP 超时
+- 运行配置：Agent 最终读取的 Skill 与可选 MCP 装配结果
+
+默认界面不直接展示原始 JSON；长配置和源码细节都收在高级区域，避免新手一打开就被调试信息淹没。
 
 ## MCP Server
 
@@ -496,7 +535,7 @@ specweft mcp
 - `specweft.apply_project_mcp`
 - `specweft.apply_project_skill`
 
-`specweft.review_current_diff` 默认返回紧凑 diff 摘要和结构化讲解，不直接输出完整 patch 文本。这样 Codex 或 Claude 可以先看需求拆解、分组、源码查看方式和风险提示，再按需读取具体文件，避免一次 review 就撑满上下文。
+`specweft.review_current_diff` 默认返回紧凑 diff 摘要和 `agentReview`。`agentReview` 是给 Codex / Claude 直接消费的讲解入口：先看需求上下文、需求/功能分块、为什么改、实现思路、阅读入口和验证建议。完整 patch 文本不会进入 MCP 输出；更细的改动分组和高级源码详情保留在 `advancedReview` 或报告文件里，只有需要深挖时再读。
 
 如果当前存在活跃工作段，代码讲解会额外说明哪些文件是本工作段开始后新增的改动，哪些文件在开始前就已经处于未提交状态。这样连续处理多个需求时，review 不会把旧需求误当成当前需求成果。
 
@@ -592,7 +631,20 @@ pnpm --filter specweft publish
 
 ## 后续计划
 
-- 完善推荐规则
-- 增强代码讲解质量
+- 用更多项目特征提升任务到 Skill 的匹配质量
+- 在不破坏规则版可用性的前提下增强可选 LLM 讲解
 - 增加 MCP / Skill 池的导入导出
-- 优化大项目下的 Web UI 使用体验
+- 优化大项目下的筛选、视图保存和需求搜索
+- 本地闭环稳定后，再考虑团队级 review 和记忆共享
+
+## 可选记忆保护
+
+SpecWeft 的需求记忆默认保存在项目内 `.specweft/`，普通模式是明文 JSON，方便新手查看和排查。如果记忆里包含业务细节，可以设置本地密钥并迁移：
+
+```bash
+export SPECWEFT_MEMORY_KEY="一段足够长的本地密钥"
+specweft protect
+specweft protect --status
+```
+
+这会加密 `.specweft/memory.json`、`.specweft/requirements.json`、`.specweft/work-segments.json` 和 `.specweft/agent-activity.json`。之后 Codex / Claude 通过 SpecWeft 读取记忆时也需要同一个环境变量。v1 的 Markdown review 报告仍保持明文，方便人工打开 review。

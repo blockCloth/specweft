@@ -54,7 +54,7 @@ export async function initializeGlobalPools(): Promise<PoolInitResult> {
 
   await writeJsonFile(
     skillRegistryPath(),
-    mergeRegistry(await listSkillPool(), builtinSkillRegistry()),
+    mergeSkillRegistry(await listSkillPool(), builtinSkillRegistry()),
   );
 
   return {
@@ -160,6 +160,15 @@ export async function installMarketplaceSkill(
     source: "marketplace",
     tags: createMarketplaceSkillTags(skill),
     risk: "medium",
+    marketplace: {
+      author: skill.author,
+      githubUrl: skill.githubUrl,
+      path: skill.path,
+      branch: skill.branch,
+      updatedAt: skill.updatedAt,
+      stars: skill.stars,
+      forks: skill.forks,
+    },
   };
   const existingIndex = registry.items.findIndex((entry) => entry.id === skillId);
 
@@ -227,7 +236,9 @@ function createMarketplaceSkillRawUrl(skill: MarketplaceSkill): string {
   }
 
   const [, owner, repo, branchFromUrl, dirPath] = match;
-  const branch = skill.branch || branchFromUrl;
+  // The marketplace can report a default branch that disagrees with the concrete GitHub tree URL.
+  // The tree URL is the source of truth for this specific Skill path.
+  const branch = branchFromUrl || skill.branch;
   return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${dirPath}/${skill.path}`;
 }
 
@@ -258,6 +269,24 @@ function mergeRegistry<T extends { id: string }>(
   const itemsById = new Map(existing.items.map((item) => [item.id, item]));
 
   // 内置项每次初始化都更新，市场/手动项保留，避免用户安装的 Skill 被 pool init 清掉。
+  for (const item of incoming.items) {
+    itemsById.set(item.id, item);
+  }
+
+  return {
+    version: Math.max(existing.version, incoming.version),
+    items: [...itemsById.values()],
+  };
+}
+
+function mergeSkillRegistry(
+  existing: RegistryFile<SkillRegistryItem>,
+  incoming: RegistryFile<SkillRegistryItem>,
+): RegistryFile<SkillRegistryItem> {
+  const itemsById = new Map(existing.items.map((item) => [item.id, item]));
+
+  // 内置 Skill 由 SpecWeft 管理，每次初始化都覆盖元数据和 SKILL.md。
+  // 市场或用户安装的 Skill 保留，避免初始化清掉用户自己的能力池。
   for (const item of incoming.items) {
     itemsById.set(item.id, item);
   }

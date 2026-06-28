@@ -7,6 +7,7 @@ import {
   createBootstrapSession,
   initializeSpecWeftProject,
 } from "../bootstrap/bootstrap-session.js";
+import { updateProjectSettings } from "../settings/project-settings.js";
 
 test("initializes project for agent bootstrap workflow", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "specweft-bootstrap-home-"));
@@ -40,6 +41,7 @@ test("initializes project for agent bootstrap workflow", async () => {
     assert.match(instruction, /specweft\.prepare_task/);
     assert.match(instruction, /specweft\.restore_requirement/);
     assert.match(instruction, /specweft\.start_work_segment/);
+    assert.match(instruction, /specweft\.read_skill_detail/);
     assert.match(instruction, /specweft\.record_current_diff/);
     assert.match(instruction, /guardrail\.startWorkSegmentInput/);
     assert.match(instruction, /agentReview\.suggestedAgentResponse/);
@@ -49,6 +51,7 @@ test("initializes project for agent bootstrap workflow", async () => {
     assert.match(claudeInstruction, /specweft\.prepare_task/);
     assert.match(claudeInstruction, /specweft\.start_work_segment/);
     assert.match(codexSkill, /specweft\.prepare_task/);
+    assert.match(codexSkill, /specweft\.read_skill_detail/);
     assert.match(codexSkill, /specweft\.restore_requirement/);
     assert.match(codexSkill, /guardrail\.startWorkSegmentInput/);
     assert.match(codexSkill, /guardrail\.recordCurrentDiffInput/);
@@ -107,15 +110,24 @@ test("creates bootstrap session with profile, assembly, recommendations, and wor
   try {
     process.env.SPECWEFT_HOME = home;
     await initializeSpecWeftProject(repoPath);
+    await updateProjectSettings(repoPath, {
+      capabilities: {
+        mcpStdioTimeoutMs: 32000,
+      },
+    });
     const bootstrap = await createBootstrapSession(repoPath);
 
     assert.equal(bootstrap.projectName, path.basename(repoPath));
     assert.ok(bootstrap.recommendations.length >= 4);
     assert.ok(Object.keys(bootstrap.assembly.mcpServers).includes("filesystem"));
+    assert.equal(bootstrap.assembly.mcpServers.filesystem?.timeoutMs, 32000);
     assert.ok(bootstrap.assembly.skills.some((skill) => skill.id === "diff-explainer"));
+    assert.ok(bootstrap.assembly.skillContext.allowedSkillIds.includes("diff-explainer"));
+    assert.doesNotMatch(JSON.stringify(bootstrap.assembly.skillContext), /# Diff 讲解器/);
     assert.equal(bootstrap.memoryDigest.totalMemories, 0);
     assert.equal(bootstrap.requirementDossier.totalSessions, 0);
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("prepare_task")));
+    assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("read_skill_detail")));
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_memory_digest")));
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("get_requirement_dossier")));
     assert.ok(bootstrap.workflow.some((item) => item.actions.join(" ").includes("restore_requirement")));

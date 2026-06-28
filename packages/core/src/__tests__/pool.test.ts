@@ -51,6 +51,26 @@ test("keeps marketplace Skills when global pools are initialized again", async (
   }
 });
 
+test("refreshes builtin Skill metadata and content on pool initialization", async () => {
+  const home = await createTempHome();
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await initializeGlobalPools();
+    const detail = await readSkillDetail("diff-explainer");
+    const pool = await listSkillPool();
+    const builtin = pool.items.find((item) => item.id === "diff-explainer");
+
+    assert.equal(builtin?.name, "Diff 讲解器");
+    assert.match(builtin?.description ?? "", /主链路讲解/);
+    assert.match(detail?.content ?? "", /为什么这样改/);
+    assert.doesNotMatch(builtin?.description ?? "", /Explain AI-generated/);
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("reads installed Skill detail content from the global pool", async () => {
   const home = await createTempHome();
 
@@ -62,6 +82,29 @@ test("reads installed Skill detail content from the global pool", async () => {
 
     assert.equal(detail?.item.id, installed.item.id);
     assert.match(detail?.content ?? "", /Use project rules first/);
+  } finally {
+    delete process.env.SPECWEFT_HOME;
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("uses the GitHub tree branch when marketplace Skill branch metadata disagrees", async () => {
+  const home = await createTempHome();
+
+  try {
+    process.env.SPECWEFT_HOME = home;
+    await initializeGlobalPools();
+    const installed = await installMarketplaceSkill({
+      ...marketplaceSkill(),
+      githubUrl: "https://github.com/supabase/supabase/tree/master/.claude/skills/studio-testing",
+      branch: "main",
+      path: "SKILL.md",
+    }, "# Studio Testing\n");
+
+    assert.equal(
+      installed.contentSource,
+      "https://raw.githubusercontent.com/supabase/supabase/master/.claude/skills/studio-testing/SKILL.md",
+    );
   } finally {
     delete process.env.SPECWEFT_HOME;
     await rm(home, { recursive: true, force: true });

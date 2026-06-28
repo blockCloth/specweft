@@ -2,8 +2,9 @@
 
 Local Web UI server for SpecWeft.
 
-The UI helps you inspect project context, recommended Skills, optional MCPs,
-runtime assembly, review explanations, work segments, and requirement memory.
+The UI is the product workbench for the local SpecWeft workflow. It keeps
+task preparation, Skill routing, Review Lens explanations, Memory Vault restore,
+and Agent Bridge connection state in one browser surface.
 
 Most users should start it through the CLI:
 
@@ -29,12 +30,14 @@ await startWebServer({
 
 ## What The UI Shows
 
-- project profile and recording status
-- task preparation results for vague requirements
-- Skill recommendations and Skill detail previews
-- optional MCP marketplace candidates
-- review overview grouped by requirement or work batch
-- requirement dossier, timeline, recall, and handoff context
-- Codex and Claude MCP connection snippets
+- SpecWeft Workbench: raw task input, Codex / Claude auto-use status, next actions, and context budget
+- Skill Router: enabled Skills, task-specific recommendations, Skill detail preview, and optional MCP candidates
+- Review Lens: why the change exists, how it was implemented, where to read first, validation, and mixed-diff grouping
+- Memory Vault: requirement digest, scoped restore, timeline, handoff prompt, work segments, and memory protection
+- Agent Bridge: generated Harness entries, MCP connection summary, expected tool order, and advanced raw config snippets
+- Project Settings and Runtime Assembly: recording policy, compression, ignored paths, Skill registry, timeout, and final agent-readable config
+
+Default views avoid raw JSON. Long config snippets, full dossiers, and source
+details stay in advanced sections for troubleshooting.
 
 See the repository README for full documentation.

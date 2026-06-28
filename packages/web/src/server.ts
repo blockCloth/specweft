@@ -1,19 +1,25 @@
 import path from "node:path";
 import { execFile } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
 import {
+  analyzeCurrentDiff,
   applyProjectMcp,
   applyProjectSkill,
+  checkMarketplaceSkillUpdates,
+  createAgentReviewPacket,
   createBootstrapSession,
   createCapabilityCenter,
+  createAgentConnectionPackage,
+  createConnectionDoctorReport,
   createMemoryDigest,
   createMemoryIndex,
   createMemoryHandoff,
   createMemoryTimeline,
+  createProjectReadiness,
   createRequirementDossier,
   createRequirement,
   createReviewReport,
@@ -27,14 +33,17 @@ import {
   ignoreProjectMcp,
   ignoreProjectSkill,
   initializeGlobalPools,
-  initializeProject,
+  initializeSpecWeftProject,
   installMarketplaceMcp,
   installMarketplaceSkill,
   listRegisteredProjects,
   listRequirements,
   previewMarketplaceSkill,
   prepareTask,
+  readAgentActivity,
   recallSessions,
+  recordAgentActivity,
+  readProjectSettings,
   recommendForProject,
   recommendSkillsForTask,
   recommendMarketplaceMcps,
@@ -48,7 +57,9 @@ import {
   startWorkSegment,
   completeWorkSegment,
   restoreRequirementMemory,
+  updateProjectSettings,
 } from "@specweft/core";
+import type { AgentActivityKind, AgentActivitySource, AgentActivityStatus, ProjectSettingsPatch } from "@specweft/core";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { renderApp } from "./ui.js";
@@ -70,6 +81,11 @@ type ReviewBody = {
   title?: string;
 };
 
+type SourcePreviewQuery = {
+  filePath?: string;
+  maxLines?: number;
+};
+
 type PrepareBody = {
   repoPath?: string;
   task?: string;
@@ -89,6 +105,11 @@ type MarketplaceMcpBody = {
 
 type ProjectBody = {
   repoPath?: string;
+};
+
+type SettingsBody = {
+  repoPath?: string;
+  settings?: ProjectSettingsPatch;
 };
 
 type RequirementBody = {
@@ -134,24 +155,39 @@ app.post("/api/projects/register", async (context) => {
   const body = await readJsonBody<ProjectBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath, { allowUnregistered: true });
   await ensureWebProjectReady(repoPath);
-  return context.json(await registerProject(repoPath));
+  const result = await registerProject(repoPath);
+  await recordWebActivity(repoPath, {
+    kind: "project_registered",
+    title: "登记项目",
+    summary: "SpecWeft Web 已登记一个本地项目，可在同一个 UI 中切换管理。",
+    target: repoPath,
+  });
+  return context.json(result);
 });
 
 app.post("/api/projects/active", async (context) => {
   const body = await readJsonBody<ProjectBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath);
-  return context.json(await setActiveProject(repoPath));
+  const result = await setActiveProject(repoPath);
+  await recordWebActivity(repoPath, {
+    kind: "project_selected",
+    title: "切换当前项目",
+    summary: "SpecWeft Web 已切换当前项目，后续操作会读取这个项目的上下文。",
+    target: repoPath,
+  });
+  return context.json(result);
 });
 
 app.get("/api/dashboard", async (context) => {
   const repoPath = await resolveRequestRepo(context.req.query("repo"));
-  await ensureWebProjectReady(repoPath);
+  const init = await ensureWebProjectReady(repoPath);
 
   const [profile, assembly, mcpInspect] = await Promise.all([
     scanProject(repoPath),
     createRuntimeAssembly(repoPath),
     createMcpInspect(repoPath),
   ]);
+  const settings = await readProjectSettings(repoPath);
   const capabilityCenter = await createCapabilityCenter(profile, repoPath);
   const recommendations = await recommendForProject(profile, repoPath);
   const requirements = await listRequirements(repoPath);
@@ -159,13 +195,18 @@ app.get("/api/dashboard", async (context) => {
     createMemoryTimeline(repoPath, profile),
     getRecordingStatus(repoPath),
   ]);
-  const [workSegments, memoryDigest, requirementDossier, memoryProtection] = await Promise.all([
+  const [workSegments, memoryDigest, requirementDossier, memoryProtection, skillUpdateCheck, connectionDoctor, projectReadiness, bootstrapSession, agentActivity] = await Promise.all([
     createWorkSegmentStatus(repoPath, profile),
     createMemoryDigest(repoPath, profile),
     createRequirementDossier(repoPath, profile, {
       sessionPreviewLimit: 3,
     }),
     getMemoryProtectionStatus(repoPath),
+    checkMarketplaceSkillUpdates(repoPath),
+    createConnectionDoctorReport(repoPath),
+    createProjectReadiness(repoPath),
+    createBootstrapSession(repoPath),
+    readAgentActivity(repoPath),
   ]);
   const llmConfig = createLlmConfigStatus();
 
@@ -178,18 +219,118 @@ app.get("/api/dashboard", async (context) => {
     memoryDigest,
     requirementDossier,
     memoryProtection,
+    skillUpdateCheck,
     recordingStatus,
     workSegments,
+    projectReadiness,
+    bootstrapSession,
+    agentActivity,
     llmConfig,
+    settings,
     assembly,
     mcpInspect,
+    agentConnectionPackage: createAgentConnectionPackage({
+      repoPath,
+      profile,
+      harness: init.harness,
+      command: mcpInspect.clientConfig.mcpServers.specweft.command,
+      args: mcpInspect.clientConfig.mcpServers.specweft.args,
+      codexToml: mcpInspect.codexToml,
+      claudeJson: mcpInspect.claudeJson,
+    }),
+    connectionDoctor,
+    agentHarness: init.harness,
+    instructionPaths: init.instructionPaths,
+    nextCommands: init.nextCommands,
+  });
+});
+
+app.get("/api/dashboard/summary", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+
+  const bootstrapSession = await createBootstrapSession(repoPath);
+  const [
+    requirements,
+    recordingStatus,
+    memoryProtection,
+    connectionDoctor,
+    agentActivity,
+    mcpInspect,
+  ] = await Promise.all([
+    listRequirements(repoPath),
+    getRecordingStatus(repoPath),
+    getMemoryProtectionStatus(repoPath),
+    createConnectionDoctorReport(repoPath),
+    readAgentActivity(repoPath),
+    createMcpInspect(repoPath),
+  ]);
+  const llmConfig = createLlmConfigStatus();
+
+  return context.json({
+    partial: true,
+    profile: bootstrapSession.profile,
+    recommendations: bootstrapSession.recommendations,
+    capabilityCenter: bootstrapSession.capabilityCenter,
+    requirements,
+    memoryDigest: bootstrapSession.memoryDigest,
+    requirementDossier: bootstrapSession.requirementDossier,
+    memoryProtection,
+    recordingStatus,
+    bootstrapSession,
+    agentActivity,
+    llmConfig,
+    settings: bootstrapSession.settings,
+    assembly: bootstrapSession.assembly,
+    mcpInspect,
+    connectionDoctor,
+    agentHarness: undefined,
+    instructionPaths: [],
+    nextCommands: [],
   });
 });
 
 app.get("/api/bootstrap", async (context) => {
   const repoPath = await resolveRequestRepo(context.req.query("repo"));
   const keyword = context.req.query("keyword")?.trim();
-  return context.json(await createBootstrapSession(repoPath, keyword));
+  const bootstrap = await createBootstrapSession(repoPath, keyword);
+  await recordWebActivity(repoPath, {
+    kind: "bootstrap_session",
+    title: "刷新 Agent 启动上下文",
+    summary: "已生成项目画像、能力装配、记忆摘要和 Agent 调用顺序。",
+    toolName: "specweft.bootstrap_session",
+    target: keyword,
+    metadata: {
+      capabilityCount: bootstrap.capabilityCenter.summary.total,
+      memoryCount: bootstrap.memoryDigest.totalMemories,
+    },
+  });
+  return context.json(bootstrap);
+});
+
+app.get("/api/settings", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  await ensureWebProjectReady(repoPath);
+  return context.json(await readProjectSettings(repoPath));
+});
+
+app.get("/api/project-readiness", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  await ensureWebProjectReady(repoPath);
+  return context.json(await createProjectReadiness(repoPath));
+});
+
+app.post("/api/settings", async (context) => {
+  const body = await readJsonBody<SettingsBody>(context);
+  const repoPath = await resolveRequestRepo(body.repoPath);
+  await ensureWebProjectReady(repoPath);
+  const settings = await updateProjectSettings(repoPath, body.settings ?? {});
+  await recordWebActivity(repoPath, {
+    kind: "settings_updated",
+    title: "更新项目配置",
+    summary: "已更新修改记录、上下文记忆或 Skills/MCP 的项目级策略。",
+    target: ".specweft/settings.json",
+  });
+  return context.json(settings);
 });
 
 app.post("/api/prepare", async (context) => {
@@ -200,7 +341,23 @@ app.post("/api/prepare", async (context) => {
     return context.json({ error: "Task is required." }, 400);
   }
 
-  return context.json(await prepareTask(repoPath, body.task));
+  const prepared = await prepareTask(repoPath, body.task);
+  await recordWebActivity(repoPath, {
+    kind: "prepare_task",
+    title: "准备任务上下文",
+    summary: prepared.requirement.clarifiedGoal,
+    toolName: "specweft.prepare_task",
+    requirementId: prepared.matchedRequirement?.requirementId,
+    requirementTitle: prepared.matchedRequirement?.title,
+    metadata: {
+      codePointers: prepared.codePointers.length,
+      skillSuggestions: prepared.skillSuggestions.length,
+      memorySuggestions: prepared.memorySuggestions.length,
+      ambiguity: prepared.taskAnalysis.ambiguity,
+      confidence: prepared.taskAnalysis.confidence,
+    },
+  });
+  return context.json(prepared);
 });
 
 app.get("/api/memory-index", async (context) => {
@@ -231,10 +388,24 @@ app.post("/api/restore-requirement", async (context) => {
   const profile = await scanProject(repoPath);
   const requirement = await resolveApiRequirement(repoPath, body.requirementId);
 
-  return context.json(await restoreRequirementMemory(repoPath, profile, {
+  const restored = await restoreRequirementMemory(repoPath, profile, {
     keyword: body.keyword,
     requirement,
-  }));
+  });
+  await recordWebActivity(repoPath, {
+    kind: "restore_requirement",
+    title: "恢复需求记忆",
+    summary: restored.summary,
+    toolName: "specweft.restore_requirement",
+    requirementId: restored.requirement?.id,
+    requirementTitle: restored.requirement?.title,
+    target: body.keyword,
+    metadata: {
+      sessions: restored.sessions.length,
+      compression: Boolean(restored.compression),
+    },
+  });
+  return context.json(restored);
 });
 
 app.post("/api/task-skills", async (context) => {
@@ -246,9 +417,19 @@ app.post("/api/task-skills", async (context) => {
   }
 
   const profile = await scanProject(repoPath);
+  const skillSuggestions = await recommendSkillsForTask(profile, repoPath, body.task);
+  await recordWebActivity(repoPath, {
+    kind: "recommend_skills",
+    title: "按需求推荐 Skill",
+    summary: "SpecWeft 已根据当前任务语义和本地 Skill 池生成候选。",
+    toolName: "specweft.recommend_skills_for_task",
+    metadata: {
+      suggestions: skillSuggestions.length,
+    },
+  });
   return context.json({
     profile,
-    skillSuggestions: await recommendSkillsForTask(profile, repoPath, body.task),
+    skillSuggestions,
   });
 });
 
@@ -257,9 +438,17 @@ app.get("/api/marketplace/skills", async (context) => {
   const keyword = context.req.query("keyword")?.trim();
   const profile = await scanProject(repoPath);
   const recommendations = await recommendForProject(profile, repoPath);
+  const settings = await readProjectSettings(repoPath);
   return context.json(await recommendMarketplaceSkills(profile, recommendations, {
     keywords: keyword ? [keyword] : undefined,
+    registryUrl: settings.capabilities.skillRegistryUrl,
+    timeoutMs: settings.capabilities.mcpStdioTimeoutMs,
   }));
+});
+
+app.get("/api/marketplace/skills/updates", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  return context.json(await checkMarketplaceSkillUpdates(repoPath));
 });
 
 app.post("/api/marketplace/skills/apply", async (context) => {
@@ -273,6 +462,13 @@ app.post("/api/marketplace/skills/apply", async (context) => {
   // 市场 Skill 先进入全局池，再写入项目选择。这样同一个 Skill 可以被多个项目复用。
   const installed = await installMarketplaceSkill(body.skill);
   const selection = await applyProjectSkill(repoPath, installed.item.id);
+  await recordWebActivity(repoPath, {
+    kind: "install_skill",
+    title: "加入并启用市场 Skill",
+    summary: `已将 ${installed.item.name} 加入全局 Skill 池，并启用到当前项目。`,
+    toolName: "specweft.install_marketplace_skill",
+    target: installed.item.id,
+  });
 
   return context.json({
     installed,
@@ -313,6 +509,17 @@ app.post("/api/marketplace/mcps/apply", async (context) => {
   // MCP 候选先写入全局 manifest 池，再启用到项目选择，最后由 runtime assembly 输出给 Codex/Claude。
   const installed = await installMarketplaceMcp(body.mcp);
   const selection = await applyProjectMcp(repoPath, installed.item.id);
+  await recordWebActivity(repoPath, {
+    kind: "install_mcp",
+    title: "加入并启用市场 MCP",
+    summary: `已将 ${installed.item.name} 写入全局 MCP manifest 池，并启用到当前项目。`,
+    toolName: "specweft.install_marketplace_mcp",
+    target: installed.item.id,
+    metadata: {
+      runtime: installed.manifest.runtime,
+      risk: installed.manifest.risk,
+    },
+  });
 
   return context.json({
     installed,
@@ -359,24 +566,53 @@ app.post("/api/work-segments/start", async (context) => {
     return context.json({ error: "Work segment task or title is required." }, 400);
   }
 
-  return context.json(await startWorkSegment(repoPath, {
+  const segmentResult = await startWorkSegment(repoPath, {
     projectId: profile.id,
     requirement,
     task: body.task ?? body.title ?? requirement?.title ?? "未命名工作段",
     title: body.title,
-  }));
+  });
+  const { segment } = segmentResult;
+  await recordWebActivity(repoPath, {
+    kind: "start_work_segment",
+    title: "开启工作段",
+    summary: segment.task,
+    toolName: "specweft.start_work_segment",
+    requirementId: segment.requirementId,
+    requirementTitle: segment.requirementTitle,
+    target: segment.id,
+    metadata: {
+      baselineFiles: segment.baselineChangedFiles.length,
+      currentFiles: segment.currentChangedFiles.length,
+    },
+  });
+  return context.json(segmentResult);
 });
 
 app.post("/api/work-segments/complete", async (context) => {
   const body = await readJsonBody<WorkSegmentBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath);
+  const segment = await completeWorkSegment(repoPath, {
+    segmentId: body.segmentId,
+    status: body.status,
+    title: body.title,
+    summary: body.summary,
+  });
+  if (!segment) {
+    return context.json({ error: "No active work segment was found." }, 400);
+  }
+  await recordWebActivity(repoPath, {
+    kind: "complete_work_segment",
+    title: "完成工作段",
+    summary: segment.summary || segment.task,
+    toolName: "specweft.complete_work_segment",
+    status: segment.status === "recorded" ? "success" : "attention",
+    requirementId: segment.requirementId,
+    requirementTitle: segment.requirementTitle,
+    target: segment.id,
+  });
   return context.json({
-    segment: await completeWorkSegment(repoPath, {
-      segmentId: body.segmentId,
-      status: body.status,
-      title: body.title,
-      summary: body.summary,
-    }),
+    segment,
   });
 });
 
@@ -389,19 +625,38 @@ app.post("/api/requirements", async (context) => {
     return context.json({ error: "Requirement title is required." }, 400);
   }
 
-  return context.json(await createRequirement(repoPath, {
+  const requirement = await createRequirement(repoPath, {
     projectId: profile.id,
     title: body.title,
     keywords: body.keywords,
     summary: body.summary,
-  }));
+  });
+  await recordWebActivity(repoPath, {
+    kind: "requirement_created",
+    title: "创建需求线",
+    summary: requirement.summary || `已创建需求线：${requirement.title}`,
+    requirementId: requirement.id,
+    requirementTitle: requirement.title,
+    metadata: {
+      keywords: requirement.keywords,
+    },
+  });
+  return context.json(requirement);
 });
 
 app.post("/api/requirements/active", async (context) => {
   const body = await readJsonBody<RequirementBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath);
   const id = assertId(body.id);
-  return context.json(await setActiveRequirement(repoPath, id));
+  const result = await setActiveRequirement(repoPath, id);
+  await recordWebActivity(repoPath, {
+    kind: "requirement_selected",
+    title: "切换当前需求线",
+    summary: `当前需求线已切换为：${result.title}`,
+    requirementId: result.id,
+    requirementTitle: result.title,
+  });
+  return context.json(result);
 });
 
 app.get("/api/assembly", async (context) => {
@@ -414,8 +669,19 @@ app.get("/api/mcp-inspect", async (context) => {
   return context.json(await createMcpInspect(repoPath));
 });
 
+app.get("/api/connection-doctor", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  return context.json(await createConnectionDoctorReport(repoPath));
+});
+
 app.get("/api/llm-config", async (context) => {
   return context.json(createLlmConfigStatus());
+});
+
+app.get("/api/agent-activity", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  const limit = parseOptionalNumber(context.req.query("limit"), 1, 100, 30);
+  return context.json(await readAgentActivity(repoPath, limit));
 });
 
 app.get("/api/skills/:id", async (context) => {
@@ -429,6 +695,17 @@ app.get("/api/skills/:id", async (context) => {
   return context.json(detail);
 });
 
+app.get("/api/source-preview", async (context) => {
+  const repoPath = await resolveRequestRepo(context.req.query("repo"));
+  const filePath = context.req.query("path")?.trim();
+  const maxLines = parseOptionalNumber(context.req.query("maxLines"), 1, 120, 60);
+
+  return context.json(await createSourcePreview(repoPath, {
+    filePath,
+    maxLines,
+  }));
+});
+
 app.post("/api/selection/:action", async (context) => {
   const action = context.req.param("action");
   const body = await readJsonBody<SelectionBody>(context);
@@ -437,22 +714,70 @@ app.post("/api/selection/:action", async (context) => {
   const id = assertId(body.id);
 
   if (action === "apply" && type === "mcp") {
-    return context.json(await applyProjectMcp(repoPath, id));
+    const selection = await applyProjectMcp(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_mcp",
+      title: "启用项目 MCP",
+      summary: "已将全局 MCP 池中的能力启用到当前项目。",
+      toolName: "specweft.apply_project_mcp",
+      target: id,
+    });
+    return context.json(selection);
   }
   if (action === "apply" && type === "skill") {
-    return context.json(await applyProjectSkill(repoPath, id));
+    const selection = await applyProjectSkill(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_skill",
+      title: "启用项目 Skill",
+      summary: "已将全局 Skill 池中的能力启用到当前项目。",
+      toolName: "specweft.apply_project_skill",
+      target: id,
+    });
+    return context.json(selection);
   }
   if (action === "disable" && type === "mcp") {
-    return context.json(await disableProjectMcp(repoPath, id));
+    const selection = await disableProjectMcp(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_mcp",
+      title: "停用项目 MCP",
+      summary: "已停用当前项目中的 MCP 能力。",
+      status: "attention",
+      target: id,
+    });
+    return context.json(selection);
   }
   if (action === "disable" && type === "skill") {
-    return context.json(await disableProjectSkill(repoPath, id));
+    const selection = await disableProjectSkill(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_skill",
+      title: "停用项目 Skill",
+      summary: "已停用当前项目中的 Skill 能力。",
+      status: "attention",
+      target: id,
+    });
+    return context.json(selection);
   }
   if (action === "ignore" && type === "mcp") {
-    return context.json(await ignoreProjectMcp(repoPath, id));
+    const selection = await ignoreProjectMcp(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_mcp",
+      title: "忽略项目 MCP",
+      summary: "已将 MCP 标记为忽略，后续推荐会降低优先级。",
+      status: "attention",
+      target: id,
+    });
+    return context.json(selection);
   }
   if (action === "ignore" && type === "skill") {
-    return context.json(await ignoreProjectSkill(repoPath, id));
+    const selection = await ignoreProjectSkill(repoPath, id);
+    await recordWebActivity(repoPath, {
+      kind: "apply_skill",
+      title: "忽略项目 Skill",
+      summary: "已将 Skill 标记为忽略，后续推荐会降低优先级。",
+      status: "attention",
+      target: id,
+    });
+    return context.json(selection);
   }
 
   return context.json({ error: `Unknown selection action: ${action}` }, 400);
@@ -462,19 +787,47 @@ app.post("/api/review", async (context) => {
   const body = await readJsonBody<ReviewBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
-  const report = await createReviewReport(repoPath, profile, body.title, 7, body.requirementId);
+  const report = await createReviewReport(repoPath, profile, body.title, undefined, body.requirementId);
+  const diff = await analyzeCurrentDiff(repoPath);
+  const agentReview = createAgentReviewPacket({
+    title: report.title,
+    review: report.review,
+    diff,
+    requirement: report.requirement,
+    reportPath: report.reportPath,
+  });
+  const recordingStatus = await getRecordingStatus(repoPath);
+  const workSegments = await createWorkSegmentStatus(repoPath, profile);
+  const timeline = await createMemoryTimeline(repoPath, profile);
+  const requirementDossier = await createRequirementDossier(repoPath, profile, { sessionPreviewLimit: 3 });
+  await recordWebActivity(repoPath, {
+    kind: "record_current_diff",
+    title: "生成代码讲解",
+    summary: report.memory.summary,
+    toolName: "specweft.record_current_diff",
+    requirementId: report.requirement?.id,
+    requirementTitle: report.requirement?.title,
+    target: report.reportPath,
+    metadata: {
+      changedFiles: diff.changedFiles.length,
+      additions: diff.stats.additions,
+      deletions: diff.stats.deletions,
+    },
+  });
 
   return context.json({
     title: report.title,
     reportPath: report.reportPath,
     memory: report.memory,
+    requirement: report.requirement,
+    agentReview,
     review: report.review,
     html: report.html,
     markdown: report.markdown,
-    recordingStatus: await getRecordingStatus(repoPath),
-    workSegments: await createWorkSegmentStatus(repoPath, profile),
-    timeline: await createMemoryTimeline(repoPath, profile),
-    requirementDossier: await createRequirementDossier(repoPath, profile, { sessionPreviewLimit: 3 }),
+    recordingStatus,
+    workSegments,
+    timeline,
+    requirementDossier,
   });
 });
 
@@ -482,20 +835,47 @@ app.post("/api/record-current-diff", async (context) => {
   const body = await readJsonBody<ReviewBody>(context);
   const repoPath = await resolveRequestRepo(body.repoPath);
   const profile = await scanProject(repoPath);
-  const report = await createReviewReport(repoPath, profile, body.title, 7, body.requirementId);
+  const report = await createReviewReport(repoPath, profile, body.title, undefined, body.requirementId);
+  const diff = await analyzeCurrentDiff(repoPath);
+  const agentReview = createAgentReviewPacket({
+    title: report.title,
+    review: report.review,
+    diff,
+    requirement: report.requirement,
+    reportPath: report.reportPath,
+  });
+  const recordingStatus = await getRecordingStatus(repoPath);
+  const workSegments = await createWorkSegmentStatus(repoPath, profile);
+  const timeline = await createMemoryTimeline(repoPath, profile);
+  const requirementDossier = await createRequirementDossier(repoPath, profile, { sessionPreviewLimit: 3 });
+  await recordWebActivity(repoPath, {
+    kind: "record_current_diff",
+    title: "记录当前 diff",
+    summary: report.memory.summary,
+    toolName: "specweft.record_current_diff",
+    requirementId: report.requirement?.id,
+    requirementTitle: report.requirement?.title,
+    target: report.reportPath,
+    metadata: {
+      changedFiles: diff.changedFiles.length,
+      additions: diff.stats.additions,
+      deletions: diff.stats.deletions,
+    },
+  });
 
   return context.json({
     title: report.title,
     reportPath: report.reportPath,
     memory: report.memory,
     requirement: report.requirement,
+    agentReview,
     review: report.review,
     html: report.html,
     markdown: report.markdown,
-    recordingStatus: await getRecordingStatus(repoPath),
-    workSegments: await createWorkSegmentStatus(repoPath, profile),
-    timeline: await createMemoryTimeline(repoPath, profile),
-    requirementDossier: await createRequirementDossier(repoPath, profile, { sessionPreviewLimit: 3 }),
+    recordingStatus,
+    workSegments,
+    timeline,
+    requirementDossier,
   });
 });
 
@@ -507,9 +887,23 @@ app.get("/api/recall", async (context) => {
     return context.json({ sessions: [] });
   }
   await resolveApiRequirement(repoPath, requirementId);
+  const sessions = await recallSessions(repoPath, keyword, requirementId);
+  await recordWebActivity(repoPath, {
+    kind: "memory_recalled",
+    title: "按关键词召回记忆",
+    summary: sessions.length > 0
+      ? `已找到 ${sessions.length} 条相关记忆。`
+      : "没有找到匹配的记忆。",
+    toolName: "specweft.recall_sessions",
+    target: keyword,
+    requirementId,
+    metadata: {
+      sessions: sessions.length,
+    },
+  });
 
   return context.json({
-    sessions: await recallSessions(repoPath, keyword, requirementId),
+    sessions,
   });
 });
 
@@ -519,8 +913,23 @@ app.get("/api/handoff", async (context) => {
   const profile = await scanProject(repoPath);
   const requirement = keyword ? undefined : await getActiveRequirement(repoPath);
 
+  const handoff = await createMemoryHandoff(repoPath, profile, keyword, 5, requirement);
+  await recordWebActivity(repoPath, {
+    kind: "memory_handoff",
+    title: "生成线程交接上下文",
+    summary: handoff.summary,
+    toolName: "specweft.create_memory_handoff",
+    requirementId: handoff.requirementId,
+    requirementTitle: handoff.requirementTitle,
+    target: keyword,
+    metadata: {
+      sessions: handoff.sessions.length,
+      changedFiles: handoff.changedFiles.length,
+    },
+  });
+
   return context.json({
-    handoff: await createMemoryHandoff(repoPath, profile, keyword, 5, requirement),
+    handoff,
   });
 });
 
@@ -590,6 +999,19 @@ function parseBooleanQuery(value: string | undefined): boolean {
   return ["1", "true", "yes", "full"].includes(value.toLowerCase());
 }
 
+function parseOptionalNumber(value: string | undefined, min: number, max: number, fallback: number): number {
+  if (!value?.trim()) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
 async function readJsonBody<T>(context: Context): Promise<T> {
   try {
     return await context.req.json<T>();
@@ -631,10 +1053,32 @@ async function normalizeRepoPath(repoPath: string): Promise<string> {
   }
 }
 
-async function ensureWebProjectReady(repoPath: string): Promise<void> {
-  await initializeGlobalPools();
-  await initializeProject(repoPath);
+async function ensureWebProjectReady(repoPath: string) {
+  const init = await initializeSpecWeftProject(repoPath);
   await registerProject(repoPath);
+
+  return init;
+}
+
+async function recordWebActivity(repoPath: string, input: {
+  kind: AgentActivityKind;
+  title: string;
+  summary: string;
+  status?: AgentActivityStatus;
+  toolName?: string;
+  requirementId?: string;
+  requirementTitle?: string;
+  target?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await recordAgentActivity(repoPath, {
+      source: "web" satisfies AgentActivitySource,
+      ...input,
+    });
+  } catch {
+    // Activity logging must never block the main product flow.
+  }
 }
 
 async function assertKnownRepoPath(repoPath: string): Promise<string> {
@@ -672,6 +1116,77 @@ function assertId(value?: string): string {
   return value;
 }
 
+async function createSourcePreview(repoPath: string, query: SourcePreviewQuery) {
+  const relativePath = assertProjectRelativePath(query.filePath);
+  const repoRoot = await normalizeRepoPath(repoPath);
+  const resolved = path.resolve(repoRoot, relativePath);
+  const realRepoRoot = await realpath(repoRoot);
+  let realFilePath: string;
+
+  try {
+    realFilePath = await realpath(resolved);
+  } catch {
+    throw new BadRequestError(`Source file does not exist: ${relativePath}`);
+  }
+
+  assertPathInsideProject(realRepoRoot, realFilePath);
+
+  const fileStat = await stat(realFilePath);
+  if (!fileStat.isFile()) {
+    throw new BadRequestError(`Source path is not a file: ${relativePath}`);
+  }
+  if (fileStat.size > 512 * 1024) {
+    return {
+      path: relativePath,
+      content: "",
+      lineStart: 1,
+      lineEnd: 0,
+      totalLines: 0,
+      truncated: true,
+      reason: "File is larger than 512KB, so SpecWeft skipped inline preview.",
+    };
+  }
+
+  const content = await readFile(realFilePath, "utf-8");
+  const lines = content.split(/\r?\n/);
+  const maxLines = query.maxLines ?? 60;
+  const previewLines = lines.slice(0, maxLines);
+  const preview = previewLines.join("\n").slice(0, 12000);
+
+  return {
+    path: relativePath,
+    content: preview,
+    lineStart: 1,
+    lineEnd: previewLines.length,
+    totalLines: lines.length,
+    truncated: lines.length > previewLines.length || preview.length < previewLines.join("\n").length,
+    reason: "Preview is intentionally limited to the first main-chain source segment.",
+  };
+}
+
+function assertProjectRelativePath(filePath?: string): string {
+  if (!filePath?.trim()) {
+    throw new BadRequestError("Source preview path is required.");
+  }
+  if (path.isAbsolute(filePath)) {
+    throw new BadRequestError("Source preview path must be project-relative.");
+  }
+
+  const normalized = path.normalize(filePath).replaceAll("\\", "/");
+  if (normalized.startsWith("../") || normalized === ".." || normalized.includes("/../")) {
+    throw new BadRequestError("Source preview path must stay inside the project.");
+  }
+
+  return normalized;
+}
+
+function assertPathInsideProject(repoRoot: string, filePath: string): void {
+  const relative = path.relative(repoRoot, filePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new BadRequestError("Source preview path must stay inside the project.");
+  }
+}
+
 function createLlmConfigStatus() {
   return {
     enabled: Boolean((process.env.SPECWEFT_LLM_API_KEY || process.env.OPENAI_API_KEY)?.trim()),
@@ -687,12 +1202,18 @@ function createLlmConfigStatus() {
   };
 }
 
-function createMcpInspect(repoPath: string) {
+async function createMcpInspect(repoPath: string) {
+  const settings = await readProjectSettings(repoPath);
   const clientConfig = createMcpClientConfig(repoPath);
 
   return {
     server: "specweft",
     transport: "stdio",
+    settings: {
+      skillRegistryUrl: settings.capabilities.skillRegistryUrl,
+      autoCheckSkillUpdates: settings.capabilities.autoCheckSkillUpdates,
+      mcpStdioTimeoutMs: settings.capabilities.mcpStdioTimeoutMs,
+    },
     tools: SPECWEFT_MCP_TOOL_NAMES,
     clientConfig,
     codexToml: createCodexTomlSnippet(clientConfig),
